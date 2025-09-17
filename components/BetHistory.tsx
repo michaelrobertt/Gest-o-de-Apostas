@@ -1,15 +1,19 @@
 
-import React, { useState, useMemo } from 'react';
-import { Bet, BetStatus, Market } from '../types';
-import { CheckCircleIcon, XCircleIcon, TrashIcon, ClockIcon } from './icons';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Bet, BetStatus, Market, LolLeague } from '../types';
+import { CheckCircleIcon, XCircleIcon, TrashIcon, PencilIcon } from './icons';
+import Modal from './Modal';
+import { toast } from 'react-hot-toast';
+import { MARKETS, LOL_LEAGUES } from '../constants';
 
 interface BetHistoryProps {
     bets: Bet[];
     onDelete: (betId: string) => void;
     onUpdateStatus: (betId: string, newStatus: BetStatus.WON | BetStatus.LOST) => void;
+    onUpdateBet: (betId: string, updatedBet: Bet) => void;
 }
 
-const BetRow: React.FC<{ bet: Bet; onDelete: (id: string) => void; onUpdateStatus: (id: string, status: BetStatus.WON | BetStatus.LOST) => void; }> = ({ bet, onDelete, onUpdateStatus }) => {
+const BetRow: React.FC<{ bet: Bet; onDelete: (id: string) => void; onUpdateStatus: (id: string, status: BetStatus.WON | BetStatus.LOST) => void; onEdit: (bet: Bet) => void; }> = ({ bet, onDelete, onUpdateStatus, onEdit }) => {
     const statusPillClass = {
         [BetStatus.PENDING]: 'bg-yellow-500/20 text-yellow-400',
         [BetStatus.WON]: 'bg-green-500/20 text-brand-win',
@@ -51,6 +55,9 @@ const BetRow: React.FC<{ bet: Bet; onDelete: (id: string) => void; onUpdateStatu
                             </button>
                         </>
                     )}
+                     <button onClick={() => onEdit(bet)} className="p-2 rounded-md hover:bg-brand-primary/20 text-brand-primary" title="Editar Aposta">
+                        <PencilIcon className="w-5 h-5"/>
+                    </button>
                     <button onClick={() => onDelete(bet.id)} className="p-2 rounded-md hover:bg-brand-danger/20 text-brand-danger" title="Excluir Aposta">
                         <TrashIcon className="w-5 h-5"/>
                     </button>
@@ -61,9 +68,56 @@ const BetRow: React.FC<{ bet: Bet; onDelete: (id: string) => void; onUpdateStatu
 };
 
 
-const BetHistory: React.FC<BetHistoryProps> = ({ bets, onDelete, onUpdateStatus }) => {
+const BetHistory: React.FC<BetHistoryProps> = ({ bets, onDelete, onUpdateStatus, onUpdateBet }) => {
     const [marketFilter, setMarketFilter] = useState('Todos Mercados');
     const [statusFilter, setStatusFilter] = useState('Todos Status');
+    const [editingBet, setEditingBet] = useState<Bet | null>(null);
+    const [formState, setFormState] = useState<Bet | null>(null);
+    
+    useEffect(() => {
+        setFormState(editingBet);
+    }, [editingBet]);
+
+    const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+        if (!formState) return;
+        const { name, value } = e.target;
+        
+        const newState = { ...formState, [name]: value };
+
+        if (name === 'market') {
+            if (value === Market.LOL) {
+                newState.league = LolLeague.LPL;
+            } else {
+                newState.league = 'N/A';
+            }
+        }
+        setFormState(newState);
+    };
+
+    const handleSave = () => {
+        if (formState) {
+            const betToUpdate: Bet = {
+                ...formState,
+                value: parseFloat(String(formState.value)),
+                odd: parseFloat(String(formState.odd)),
+                units: parseFloat(String(formState.units)),
+            };
+
+            if (isNaN(betToUpdate.value) || isNaN(betToUpdate.odd)) {
+                toast.error("Valor e Odd devem ser números válidos.");
+                return;
+            }
+            if (betToUpdate.details.trim() === '' || betToUpdate.betType.trim() === '') {
+                 toast.error("Detalhes e Tipo de Aposta não podem ser vazios.");
+                return;
+            }
+
+            onUpdateBet(formState.id, betToUpdate);
+            toast.success("Aposta atualizada com sucesso!");
+            setEditingBet(null);
+        }
+    };
+
 
     const filteredBets = useMemo(() => {
         return bets.filter(bet => {
@@ -102,7 +156,7 @@ const BetHistory: React.FC<BetHistoryProps> = ({ bets, onDelete, onUpdateStatus 
                     </thead>
                     <tbody>
                         {filteredBets.length > 0 ? (
-                            filteredBets.map(bet => <BetRow key={bet.id} bet={bet} onDelete={onDelete} onUpdateStatus={onUpdateStatus} />)
+                            filteredBets.map(bet => <BetRow key={bet.id} bet={bet} onDelete={onDelete} onUpdateStatus={onUpdateStatus} onEdit={setEditingBet} />)
                         ) : (
                             <tr>
                                 <td colSpan={8} className="text-center p-8 text-brand-text-secondary">Nenhuma aposta encontrada.</td>
@@ -111,6 +165,62 @@ const BetHistory: React.FC<BetHistoryProps> = ({ bets, onDelete, onUpdateStatus 
                     </tbody>
                 </table>
             </div>
+             <Modal isOpen={!!editingBet} onClose={() => setEditingBet(null)}>
+                {formState && (
+                    <div className="space-y-4">
+                        <h2 className="text-lg font-bold mb-4 text-brand-text-primary">Editar Aposta</h2>
+                        <p className="text-sm text-brand-text-secondary">Data: {new Date(formState.date).toLocaleString('pt-BR')}</p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-brand-text-secondary mb-1">Mercado</label>
+                                <select name="market" value={formState.market} onChange={handleFormChange} className="w-full bg-brand-bg border border-brand-border rounded-md p-2 focus:ring-1 focus:ring-brand-primary focus:outline-none">
+                                    {MARKETS.map(m => <option key={m} value={m}>{m}</option>)}
+                                </select>
+                            </div>
+                            {formState.market === Market.LOL && (
+                                <div>
+                                    <label className="block text-sm font-medium text-brand-text-secondary mb-1">Liga</label>
+                                    <select name="league" value={formState.league} onChange={handleFormChange} className="w-full bg-brand-bg border border-brand-border rounded-md p-2 focus:ring-1 focus:ring-brand-primary focus:outline-none">
+                                        {LOL_LEAGUES.map(l => <option key={l} value={l}>{l}</option>)}
+                                    </select>
+                                </div>
+                            )}
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-brand-text-secondary mb-1">Detalhes (Times)</label>
+                            <input type="text" name="details" value={formState.details} onChange={handleFormChange} className="w-full bg-brand-bg border border-brand-border rounded-md p-2 focus:ring-1 focus:ring-brand-primary focus:outline-none" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-brand-text-secondary mb-1">Tipo de Aposta</label>
+                            <input type="text" name="betType" value={formState.betType} onChange={handleFormChange} className="w-full bg-brand-bg border border-brand-border rounded-md p-2 focus:ring-1 focus:ring-brand-primary focus:outline-none" />
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-brand-text-secondary mb-1">Valor (R$)</label>
+                                <input type="number" step="0.01" name="value" value={formState.value} onChange={handleFormChange} className="w-full bg-brand-bg border border-brand-border rounded-md p-2 focus:ring-1 focus:ring-brand-primary focus:outline-none" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-brand-text-secondary mb-1">Odd</label>
+                                <input type="number" step="0.01" name="odd" value={formState.odd} onChange={handleFormChange} className="w-full bg-brand-bg border border-brand-border rounded-md p-2 focus:ring-1 focus:ring-brand-primary focus:outline-none" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-brand-text-secondary mb-1">Status</label>
+                                <select name="status" value={formState.status} onChange={handleFormChange} className="w-full bg-brand-bg border border-brand-border rounded-md p-2 focus:ring-1 focus:ring-brand-primary focus:outline-none">
+                                    {Object.values(BetStatus).map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end gap-2 mt-4">
+                            <button onClick={() => setEditingBet(null)} className="px-4 py-2 rounded-md bg-brand-border hover:bg-gray-600 transition-colors">Cancelar</button>
+                            <button onClick={handleSave} className="px-4 py-2 rounded-md bg-brand-primary hover:bg-brand-primary-hover transition-colors font-semibold">Salvar Alterações</button>
+                        </div>
+                    </div>
+                )}
+            </Modal>
         </div>
     );
 };

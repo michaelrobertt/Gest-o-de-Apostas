@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-hot-toast';
 import { Bet, Market, LolLeague } from '../types';
 import { MARKETS, LOL_LEAGUES, BET_TYPES, UNITS, UNIT_PERCENTAGE, HANDICAP_OPTIONS } from '../constants';
-import { parseBetFromImage } from '../services/geminiService';
+import { parseBetsFromImage } from '../services/geminiService';
 import { UploadIcon, SparklesIcon, TrashIcon } from './icons';
 
 // --- Custom TeamInput Component ---
@@ -117,8 +117,15 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeam
     const [formState, setFormState] = useState(initialFormState);
     const [isAiSectionOpen, setIsAiSectionOpen] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
-    
+    const [selection, setSelection] = useState<'A' | 'B' | null>(null);
+
     const isHandicap = formState.betType.includes('Handicap');
+    const selectionNeeded = ['Moneyline (ML)', '1x2 (Resultado Final)', 'Vencedor do Mapa'].includes(formState.betType);
+
+    useEffect(() => {
+      setSelection(null);
+    }, [formState.betType, formState.teamA, formState.teamB]);
+
 
     const handleMarketChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const newMarket = e.target.value as Market;
@@ -158,16 +165,26 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeam
         const betOdd = parseFloat(odd);
         const betUnits = parseFloat(units);
 
-        if (!teamA || !teamB || isNaN(betValue) || betValue <= 0 || isNaN(betOdd) || betOdd <= 1) {
+        if (!teamA.trim() || !teamB.trim() || isNaN(betValue) || betValue <= 0 || isNaN(betOdd) || betOdd <= 1) {
             toast.error('Preencha todos os campos corretamente, incluindo ambos os times.');
             return;
         }
 
-        const finalBetType = betType === 'Outro' ? customBetType : betType;
+        let finalBetType = betType === 'Outro' ? customBetType : betType;
         if (!finalBetType) {
             toast.error('Especifique o tipo de aposta.');
             return;
         }
+
+        if (selectionNeeded) {
+            if (!selection) {
+                toast.error('Por favor, selecione um time/resultado para este tipo de aposta.');
+                return;
+            }
+            const selectedTeamName = selection === 'A' ? teamA.trim() : teamB.trim();
+            finalBetType = `${finalBetType}: ${selectedTeamName}`;
+        }
+
 
         let finalDetails = `${teamA.trim()} vs ${teamB.trim()}`;
         if (isHandicap && handicapValue) {
@@ -190,6 +207,7 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeam
 
         toast.success('Aposta registrada com sucesso!');
         setFormState(prev => ({ ...prev, teamA: '', teamB: '', odd: '', customBetType: '', handicapValue: '' }));
+        setSelection(null);
     };
 
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -200,31 +218,39 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeam
         toast.loading('Analisando imagem com IA...');
 
         try {
-            const parsedData = await parseBetFromImage(file);
+            const parsedBets = await parseBetsFromImage(file);
             
-            let teamA = '';
-            let teamB = '';
-            if (parsedData.details) {
-                const match = parsedData.details.match(/(.+?)\s*(?:vs|x)\s*(.+)/i);
-                if (match) {
-                    teamA = match[1].trim();
-                    teamB = match[2].trim();
+            if (!parsedBets || parsedBets.length === 0) {
+                throw new Error("Nenhuma aposta válida foi encontrada na imagem.");
+            }
+
+            let successfulAdds = 0;
+            let errors = 0;
+
+            for (const pBet of parsedBets) {
+                if (pBet.details && pBet.value && pBet.odd && pBet.market && pBet.betType) {
+                    addBet({
+                        market: pBet.market,
+                        league: pBet.league || 'N/A',
+                        betType: pBet.betType,
+                        details: pBet.details,
+                        units: pBet.units || 0,
+                        value: Number(pBet.value),
+                        odd: Number(pBet.odd),
+                    });
+                    successfulAdds++;
                 } else {
-                    teamA = parsedData.details.trim();
+                    errors++;
                 }
             }
 
-            setFormState(prev => ({
-                ...prev,
-                market: parsedData.market || prev.market,
-                league: parsedData.league || prev.league,
-                betType: parsedData.betType || prev.betType,
-                teamA: teamA || prev.teamA,
-                teamB: teamB || prev.teamB,
-                odd: parsedData.odd?.toString() || prev.odd,
-            }));
             toast.dismiss();
-            toast.success('Dados extraídos da imagem!');
+            if (successfulAdds > 0) {
+                toast.success(`${successfulAdds} aposta(s) registrada(s) com sucesso!`);
+            }
+            if (errors > 0) {
+                toast.error(`${errors} aposta(s) na imagem não puderam ser lidas.`);
+            }
         } catch (error) {
             toast.dismiss();
             toast.error(error instanceof Error ? error.message : 'Erro desconhecido.');
@@ -255,7 +281,7 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeam
                     >
                         <UploadIcon className="w-10 h-10 text-brand-text-secondary mb-2" />
                         <span className="text-brand-text-primary">Clique para carregar uma imagem</span>
-                        <span className="text-xs text-brand-text-secondary">PNG, JPG, etc.</span>
+                        <span className="text-xs text-brand-text-secondary">Pode conter múltiplas apostas. PNG, JPG, etc.</span>
                         <input id="ai-upload" type="file" className="hidden" accept="image/*" onChange={handleImageUpload} disabled={isProcessing} />
                     </label>
                     {isProcessing && <p className="text-center mt-2 text-brand-primary animate-pulse">Processando...</p>}
@@ -315,6 +341,30 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeam
                         />
                     </div>
                 </div>
+
+                {selectionNeeded && (
+                    <div>
+                        <label className="block text-sm font-medium text-brand-text-secondary mb-1">Seleção</label>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setSelection('A')}
+                                disabled={!formState.teamA}
+                                className={`w-full p-2 rounded-md border text-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${selection === 'A' ? 'bg-brand-primary border-brand-primary-hover text-white' : 'bg-brand-bg border-brand-border hover:border-brand-text-secondary'}`}
+                            >
+                                {formState.teamA || 'Time A'}
+                            </button>
+                             <button
+                                type="button"
+                                onClick={() => setSelection('B')}
+                                disabled={!formState.teamB}
+                                className={`w-full p-2 rounded-md border text-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${selection === 'B' ? 'bg-brand-primary border-brand-primary-hover text-white' : 'bg-brand-bg border-brand-border hover:border-brand-text-secondary'}`}
+                            >
+                                {formState.teamB || 'Time B'}
+                            </button>
+                        </div>
+                    </div>
+                )}
                 
                 {isHandicap && (
                     <div>

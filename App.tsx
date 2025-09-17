@@ -14,12 +14,14 @@ const App: React.FC = () => {
         state,
         addBet,
         deleteBet,
+        updateBet,
         updateBetStatus,
         setInitialBankroll,
         importData,
         exportData,
         clearData,
         deleteTeamSuggestion,
+        addWithdrawal,
         stats,
         chartsData,
     } = useBankroll();
@@ -55,7 +57,7 @@ const App: React.FC = () => {
             <main className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-8">
                 <div className="space-y-4">
                     <h1 className="text-2xl font-bold text-brand-text-primary">Visão Geral da Banca</h1>
-                    <StatsCards stats={stats} onSetInitialBankroll={setInitialBankroll} />
+                    <StatsCards stats={stats} onSetInitialBankroll={setInitialBankroll} onAddWithdrawal={addWithdrawal} />
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -76,6 +78,7 @@ const App: React.FC = () => {
                         bets={state.bets}
                         stats={stats}
                         performanceByMarket={chartsData.performanceByMarket}
+                        onAddWithdrawal={addWithdrawal}
                     />
                 </div>
                 
@@ -83,6 +86,7 @@ const App: React.FC = () => {
                     bets={state.bets}
                     onDelete={deleteBet}
                     onUpdateStatus={updateBetStatus}
+                    onUpdateBet={updateBet}
                 />
             </main>
         </div>

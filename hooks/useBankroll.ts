@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Bet, BankrollData, BetStatus, Stats, ChartsData, Market, LolLeague } from '../types';
+import { Bet, BankrollData, BetStatus, Stats, ChartsData, Market, LolLeague, Withdrawal } from '../types';
 
 const LOCAL_STORAGE_KEY = 'betting-tracker-data';
 
@@ -7,6 +7,7 @@ const defaultState: BankrollData = {
     bets: [],
     initialBankroll: 100,
     blacklistedTeams: [],
+    withdrawals: [],
 };
 
 export const useBankroll = () => {
@@ -15,8 +16,8 @@ export const useBankroll = () => {
             const storedData = localStorage.getItem(LOCAL_STORAGE_KEY);
             if (storedData) {
                 const parsed = JSON.parse(storedData);
-                // Ensure blacklistedTeams exists for backwards compatibility
-                return { ...defaultState, ...parsed, blacklistedTeams: parsed.blacklistedTeams || [] };
+                // Ensure optional fields exist for backwards compatibility
+                return { ...defaultState, ...parsed, blacklistedTeams: parsed.blacklistedTeams || [], withdrawals: parsed.withdrawals || [] };
             }
             return defaultState;
         } catch (error) {
@@ -47,11 +48,45 @@ export const useBankroll = () => {
         });
     }, []);
 
+    const addWithdrawal = useCallback((amount: number) => {
+        setState(prevState => {
+            const withdrawal: Withdrawal = {
+                id: new Date().toISOString() + Math.random(),
+                date: new Date().toISOString(),
+                amount: amount,
+            };
+            const updatedWithdrawals = [...(prevState.withdrawals || []), withdrawal];
+            return { ...prevState, withdrawals: updatedWithdrawals };
+        });
+    }, []);
+
     const deleteBet = useCallback((betId: string) => {
         setState(prevState => ({
             ...prevState,
             bets: prevState.bets.filter(b => b.id !== betId)
         }));
+    }, []);
+
+    const updateBet = useCallback((betId: string, updatedBet: Bet) => {
+        setState(prevState => {
+            const newBets = prevState.bets.map(bet => {
+                if (bet.id === betId) {
+                    let profitLoss = 0;
+                    const value = Number(updatedBet.value);
+                    const odd = Number(updatedBet.odd);
+
+                    if (updatedBet.status === BetStatus.WON) {
+                        profitLoss = value * (odd - 1);
+                    } else if (updatedBet.status === BetStatus.LOST) {
+                        profitLoss = -value;
+                    }
+                    return { ...updatedBet, profitLoss, value, odd, units: Number(updatedBet.units) };
+                }
+                return bet;
+            });
+            const sortedBets = newBets.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            return { ...prevState, bets: sortedBets };
+        });
     }, []);
 
     const updateBetStatus = useCallback((betId: string, newStatus: BetStatus.WON | BetStatus.LOST) => {
@@ -146,7 +181,8 @@ export const useBankroll = () => {
                     setState({ 
                         initialBankroll: data.initialBankroll, 
                         bets: sortedBets,
-                        blacklistedTeams: data.blacklistedTeams || []
+                        blacklistedTeams: data.blacklistedTeams || [],
+                        withdrawals: data.withdrawals || [],
                     });
                     resolve("Dados importados com sucesso!");
                 } catch (error) {
@@ -188,7 +224,8 @@ export const useBankroll = () => {
         const wonBets = resolvedBets.filter(b => b.status === BetStatus.WON);
         
         const totalProfitLoss = resolvedBets.reduce((acc, b) => acc + b.profitLoss, 0);
-        const currentBankroll = state.initialBankroll + totalProfitLoss;
+        const totalWithdrawn = (state.withdrawals || []).reduce((acc, w) => acc + w.amount, 0);
+        const currentBankroll = state.initialBankroll + totalProfitLoss - totalWithdrawn;
         const totalInvested = resolvedBets.reduce((acc, b) => acc + b.value, 0);
         
         const roi = totalInvested > 0 ? (totalProfitLoss / totalInvested) * 100 : 0;
@@ -230,9 +267,10 @@ export const useBankroll = () => {
             roi,
             winRate,
             averageOdd,
-            existingTeams
+            existingTeams,
+            totalWithdrawn,
         };
-    }, [state.bets, state.initialBankroll, state.blacklistedTeams]);
+    }, [state.bets, state.initialBankroll, state.blacklistedTeams, state.withdrawals]);
 
     const chartsData = useMemo<ChartsData>(() => {
         const resolvedBetsSorted = state.bets
@@ -249,26 +287,24 @@ export const useBankroll = () => {
             });
         });
 
-        const performanceByMarket = [...Object.values(Market), ...Object.values(LolLeague)].reduce((acc, marketOrLeague) => {
-            const profit = state.bets
-                .filter(b => (b.market === marketOrLeague || b.league === marketOrLeague) && b.status !== BetStatus.PENDING)
-                .reduce((sum, b) => sum + b.profitLoss, 0);
+        const performanceMap: { [key: string]: number } = {};
+        state.bets
+            .filter(b => b.status !== BetStatus.PENDING)
+            .forEach(bet => {
+                // Always aggregate by Market
+                performanceMap[bet.market] = (performanceMap[bet.market] || 0) + bet.profitLoss;
 
-            if (profit !== 0) {
-                 const existing = acc.find(item => item.name === marketOrLeague);
-                 if(existing) {
-                    if(Object.values(LolLeague).includes(marketOrLeague as unknown as LolLeague)){
-                        // Don't add if lol league already exists
-                    } else {
-                        existing.profit += profit
+                // If it's a LoL bet and has a specific league, also aggregate by that league
+                if (bet.market === Market.LOL && bet.league && bet.league !== 'N/A') {
+                    if (Object.values(LolLeague).includes(bet.league as LolLeague)) {
+                        performanceMap[bet.league] = (performanceMap[bet.league] || 0) + bet.profitLoss;
                     }
-                 }
-                 else {
-                    acc.push({ name: marketOrLeague, profit });
-                 }
-            }
-            return acc;
-        }, [] as { name: string; profit: number }[]);
+                }
+            });
+
+        const performanceByMarket = Object.entries(performanceMap)
+            .map(([name, profit]) => ({ name, profit }))
+            .filter(item => Math.abs(item.profit) > 0.01); // Filter out zero or negligible profits
 
         return { bankrollHistory, performanceByMarket };
     }, [state.bets, state.initialBankroll]);
@@ -277,12 +313,14 @@ export const useBankroll = () => {
         state,
         addBet,
         deleteBet,
+        updateBet,
         updateBetStatus,
         setInitialBankroll,
         importData,
         exportData,
         clearData,
         deleteTeamSuggestion,
+        addWithdrawal,
         stats,
         chartsData
     };

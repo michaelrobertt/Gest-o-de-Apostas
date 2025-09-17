@@ -34,10 +34,17 @@ export interface Bet {
     profitLoss: number;
 }
 
+export interface Withdrawal {
+    id: string;
+    date: string;
+    amount: number;
+}
+
 export interface BankrollData {
     bets: Bet[];
     initialBankroll: number;
     blacklistedTeams?: string[];
+    withdrawals?: Withdrawal[];
 }
 
 export interface Stats {
@@ -50,6 +57,7 @@ export interface Stats {
     winRate: number;
     averageOdd: number;
     existingTeams: Record<Market, string[]>;
+    totalWithdrawn: number;
 }
 
 export interface BankrollHistoryPoint {
@@ -76,4 +84,11 @@ export interface AIRecommendation {
         message: string;
     } | null;
     strategicAdvice: string;
+}
+
+export interface AIWithdrawalSuggestion {
+    shouldWithdraw: boolean;
+    reasoning: string;
+    suggestedAmount: number;
+    confidenceLevel: 'Baixo' | 'Médio' | 'Alto';
 }

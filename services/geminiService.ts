@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { Bet, Market, LolLeague, BetStatus, Stats, MarketPerformancePoint, AIRecommendation } from '../types';
+import { Bet, Market, LolLeague, BetStatus, Stats, MarketPerformancePoint, AIRecommendation, AIWithdrawalSuggestion } from '../types';
 
 if (!process.env.API_KEY) {
   console.warn("API_KEY environment variable not set for Gemini. AI features will not work.");
@@ -18,7 +18,7 @@ const fileToGenerativePart = async (file: File) => {
   };
 };
 
-export const parseBetFromImage = async (imageFile: File): Promise<Partial<Bet>> => {
+export const parseBetsFromImage = async (imageFile: File): Promise<Partial<Bet>[]> => {
     if (!process.env.API_KEY) {
         throw new Error("A chave da API do Gemini não está configurada.");
     }
@@ -30,46 +30,60 @@ export const parseBetFromImage = async (imageFile: File): Promise<Partial<Bet>> 
         contents: {
             parts: [
                 imagePart,
-                { text: "Analise esta imagem de um boletim de aposta. Extraia as informações da aposta. O mercado deve ser um dos seguintes: 'League of Legends', 'Counter-Strike 2', 'Futebol'." }
+                { text: "Analise esta imagem de um boletim de aposta. Extraia as seguintes informações para CADA aposta que encontrar na imagem: mercado (deve ser um dos seguintes: 'League of Legends', 'Counter-Strike 2', 'Futebol'), liga, times envolvidos (no formato 'Time A vs Time B'), tipo de aposta, valor apostado (stake) e a odd. Retorne uma lista de objetos, um para cada aposta." }
             ],
         },
         config: {
             responseMimeType: "application/json",
             responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    market: {
-                        type: Type.STRING,
-                        enum: Object.values(Market),
-                        description: "O mercado da aposta.",
+                type: Type.ARRAY,
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        market: {
+                            type: Type.STRING,
+                            enum: Object.values(Market),
+                            description: "O mercado da aposta.",
+                        },
+                        league: {
+                            type: Type.STRING,
+                            description: "A liga, se aplicável (ex: LPL, CBLOL).",
+                        },
+                        details: {
+                            type: Type.STRING,
+                            description: "Os times envolvidos, no formato 'Time A vs Time B'.",
+                        },
+                        betType: {
+                            type: Type.STRING,
+                            description: "O tipo de aposta (ex: Moneyline, Handicap -1.5).",
+                        },
+                        value: {
+                            type: Type.NUMBER,
+                            description: "O valor apostado (stake).",
+                        },
+                        odd: {
+                            type: Type.NUMBER,
+                            description: "A odd da aposta.",
+                        },
                     },
-                    league: {
-                        type: Type.STRING,
-                        description: "A liga, se aplicável (ex: LPL, CBLOL).",
-                    },
-                    details: {
-                        type: Type.STRING,
-                        description: "Os times envolvidos, no formato 'Time A vs Time B'.",
-                    },
-                    betType: {
-                        type: Type.STRING,
-                        description: "O tipo de aposta (ex: Moneyline, Handicap -1.5).",
-                    },
-                    odd: {
-                        type: Type.NUMBER,
-                        description: "A odd da aposta.",
-                    },
-                },
+                }
             },
         },
     });
 
     try {
         const parsedJson = JSON.parse(response.text);
-        return parsedJson as Partial<Bet>;
+        if (Array.isArray(parsedJson)) {
+            return parsedJson as Partial<Bet>[];
+        }
+        // Handle cases where the API might still return a single object
+        if (typeof parsedJson === 'object' && parsedJson !== null) {
+            return [parsedJson as Partial<Bet>];
+        }
+        return [];
     } catch (e) {
         console.error("Failed to parse JSON from Gemini:", response.text);
-        throw new Error("Não foi possível extrair os dados da imagem. Tente novamente.");
+        throw new Error("Não foi possível extrair os dados da imagem. O formato da resposta da IA é inválido.");
     }
 };
 
@@ -180,5 +194,79 @@ Com base nesses dados, forneça sua análise e recomendação.
     } catch (e) {
         console.error("Failed to parse JSON from Gemini for recommendation:", response.text);
         throw new Error("Não foi possível gerar a recomendação da IA.");
+    }
+};
+
+
+export const getAIWithdrawalSuggestion = async (stats: Stats): Promise<AIWithdrawalSuggestion> => {
+    if (!process.env.API_KEY) {
+        throw new Error("A chave da API do Gemini não está configurada.");
+    }
+
+    const systemInstruction = `
+Você é um consultor financeiro especializado em gestão de banca para apostadores. Seu objetivo é ajudar o usuário a tomar decisões inteligentes sobre quando e quanto sacar para garantir lucros, proteger o capital e manter um crescimento sustentável da banca. Aja com prudência e foco na saúde financeira a longo prazo.
+
+**Sua Tarefa:**
+Com base nas estatísticas financeiras fornecidas, determine se é um bom momento para o apostador fazer um saque. Se for, sugira um valor que equilibre a realização de lucros com a necessidade de manter capital suficiente para continuar apostando efetivamente.
+
+**Critérios de Análise:**
+1.  **Crescimento da Banca:** Compare a 'Banca Atual' com a 'Banca Inicial'. Um crescimento significativo (ex: mais de 50-100% de lucro sobre o valor inicial) é um forte indicador para um saque.
+2.  **Lucro Total:** Um 'Lucro/Prejuízo Total' positivo é um pré-requisito para qualquer saque.
+3.  **Saques Anteriores:** Considere o 'Total Sacado'. Se o usuário já sacou um valor considerável, pode ser prudente continuar a reinvestir os lucros para aumentar a banca.
+4.  **Valor do Saque Sugerido:** Se um saque for recomendado, o valor deve ser uma porção do lucro, não da banca inteira. Uma boa regra é sugerir sacar entre 25% a 50% do lucro total, ou o suficiente para recuperar a banca inicial se o lucro for grande. O objetivo é "pagar" o investimento inicial e continuar jogando com o lucro.
+
+**Formato da Resposta:**
+Responda estritamente em JSON, seguindo o schema fornecido.
+`;
+    
+    const prompt = `
+Análise Financeira da Banca:
+${JSON.stringify({
+    initialBankroll: stats.initialBankroll,
+    currentBankroll: stats.currentBankroll,
+    totalProfitLoss: stats.totalProfitLoss,
+    totalWithdrawn: stats.totalWithdrawn
+}, null, 2)}
+
+Com base nesses dados, forneça sua recomendação de saque.
+`;
+
+     const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+            systemInstruction: systemInstruction,
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    shouldWithdraw: {
+                        type: Type.BOOLEAN,
+                        description: "Indica se um saque é recomendado neste momento."
+                    },
+                    reasoning: {
+                        type: Type.STRING,
+                        description: "Uma explicação clara e concisa do porquê um saque é (ou não é) recomendado, baseada nos dados fornecidos."
+                    },
+                    suggestedAmount: {
+                        type: Type.NUMBER,
+                        description: "O valor sugerido para o saque. Deve ser 0 se 'shouldWithdraw' for falso."
+                    },
+                    confidenceLevel: {
+                        type: Type.STRING,
+                        enum: ['Baixo', 'Médio', 'Alto'],
+                        description: "O nível de confiança na recomendação de saque."
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        const parsedJson = JSON.parse(response.text);
+        return parsedJson as AIWithdrawalSuggestion;
+    } catch (e) {
+        console.error("Failed to parse JSON from Gemini for withdrawal suggestion:", response.text);
+        throw new Error("Não foi possível gerar a sugestão de saque da IA.");
     }
 };

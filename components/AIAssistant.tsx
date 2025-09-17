@@ -1,24 +1,28 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Bet, BetStatus, Stats, MarketPerformancePoint, AIRecommendation } from '../types';
-import { getAIRecommendation } from '../services/geminiService';
-import { AlertTriangleIcon, SparklesIcon, RefreshCwIcon } from './icons';
+import React, { useState, useCallback } from 'react';
+import { toast } from 'react-hot-toast';
+import { Bet, BetStatus, Stats, MarketPerformancePoint, AIRecommendation, AIWithdrawalSuggestion } from '../types';
+import { getAIRecommendation, getAIWithdrawalSuggestion } from '../services/geminiService';
+import { AlertTriangleIcon, SparklesIcon, RefreshCwIcon, BanknotesIcon } from './icons';
 
 interface AIAssistantProps {
     bets: Bet[];
     stats: Stats;
     performanceByMarket: MarketPerformancePoint[];
+    onAddWithdrawal: (amount: number) => void;
 }
 
-const AIAssistant: React.FC<AIAssistantProps> = ({ bets, stats, performanceByMarket }) => {
+const AIAssistant: React.FC<AIAssistantProps> = ({ bets, stats, performanceByMarket, onAddWithdrawal }) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [result, setResult] = useState<AIRecommendation | null>(null);
+    const [betRecommendation, setBetRecommendation] = useState<AIRecommendation | null>(null);
+    const [withdrawalSuggestion, setWithdrawalSuggestion] = useState<AIWithdrawalSuggestion | null>(null);
 
     const resolvedBets = bets.filter(b => b.status !== BetStatus.PENDING);
 
-    const fetchRecommendation = useCallback(async () => {
+    const fetchAnalysis = useCallback(async () => {
         if (resolvedBets.length < 5) {
-            setResult(null);
+            setBetRecommendation(null);
+            setWithdrawalSuggestion(null);
             setError(null);
             return;
         }
@@ -26,18 +30,29 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ bets, stats, performanceByMar
         setLoading(true);
         setError(null);
         try {
-            const recommendation = await getAIRecommendation(bets, stats, performanceByMarket);
-            setResult(recommendation);
+            const [betRec, withdrawalSug] = await Promise.all([
+                getAIRecommendation(bets, stats, performanceByMarket),
+                getAIWithdrawalSuggestion(stats)
+            ]);
+            setBetRecommendation(betRec);
+            setWithdrawalSuggestion(withdrawalSug);
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Ocorreu um erro na IA.");
+            const errorMessage = err instanceof Error ? err.message : "Ocorreu um erro na IA.";
+            setError(errorMessage);
+            toast.error(errorMessage);
         } finally {
             setLoading(false);
         }
     }, [bets, stats, performanceByMarket, resolvedBets.length]);
     
-    useEffect(() => {
-        fetchRecommendation();
-    }, [fetchRecommendation]);
+    const handleWithdrawSuggested = () => {
+        if(withdrawalSuggestion?.suggestedAmount) {
+            onAddWithdrawal(withdrawalSuggestion.suggestedAmount);
+            toast.success(`Saque de R$ ${withdrawalSuggestion.suggestedAmount.toFixed(2)} registrado!`);
+            // Refresh AI suggestion after withdrawal
+            setTimeout(fetchAnalysis, 1000);
+        }
+    };
 
     const getAlertColor = (level: 'Baixo' | 'Médio' | 'Alto' | 'Nenhum') => {
         switch (level) {
@@ -70,7 +85,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ bets, stats, performanceByMar
                 <div className="text-center text-red-400 p-4">
                     <p>{error}</p>
                     <button
-                        onClick={fetchRecommendation}
+                        onClick={fetchAnalysis}
                         className="w-full mt-4 bg-brand-border text-brand-text-primary font-bold py-2 rounded-md hover:bg-gray-700 transition-colors flex items-center justify-center gap-2"
                         disabled={loading}
                     >
@@ -80,38 +95,81 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ bets, stats, performanceByMar
             );
         }
 
-        if (result) {
+        if (betRecommendation) {
             return (
-                <div className="space-y-4 p-4">
-                    {result.riskAlert && result.riskAlert.level !== 'Nenhum' && (
-                        <div className={`p-3 rounded-md border ${getAlertColor(result.riskAlert.level)}`}>
-                            <h4 className="font-bold flex items-center gap-2">
-                                <AlertTriangleIcon className="w-5 h-5"/>
-                                Alerta de Risco: {result.riskAlert.level}
+                <div className="divide-y divide-brand-border">
+                    {/* Withdrawal Suggestion Section */}
+                    {withdrawalSuggestion && (
+                        <div className="p-4 space-y-3">
+                            <h4 className="font-bold text-brand-text-primary flex items-center gap-2">
+                                <BanknotesIcon className="w-5 h-5 text-brand-primary" />
+                                Consultor de Saque
                             </h4>
-                            <p className="text-sm mt-1">{result.riskAlert.message}</p>
+                            <p className="text-sm text-brand-text-secondary">{withdrawalSuggestion.reasoning}</p>
+                            {withdrawalSuggestion.shouldWithdraw && (
+                                <div className="bg-brand-bg p-3 rounded-md">
+                                    <p className="text-sm text-brand-text-secondary">Sugestão:</p>
+                                    <p className="text-lg font-bold text-brand-primary">Sacar R$ {withdrawalSuggestion.suggestedAmount.toFixed(2)}</p>
+                                    <button
+                                      onClick={handleWithdrawSuggested}
+                                      className="w-full mt-2 bg-brand-primary/80 text-white text-sm font-semibold py-2 rounded-md hover:bg-brand-primary transition-colors"
+                                    >
+                                        Registrar Saque Sugerido
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     )}
-                    <div>
-                        <h4 className="font-bold text-brand-primary">{result.recommendationTitle}</h4>
-                        <p className="text-sm text-brand-text-secondary mt-1">{result.analysisSummary}</p>
+                    
+                    {/* Bet Recommendation Section */}
+                    <div className="space-y-4 p-4">
+                         <h4 className="font-bold text-brand-text-primary flex items-center gap-2">
+                            <SparklesIcon className="w-5 h-5 text-brand-primary" />
+                            Análise de Aposta
+                        </h4>
+                        {betRecommendation.riskAlert && betRecommendation.riskAlert.level !== 'Nenhum' && (
+                            <div className={`p-3 rounded-md border ${getAlertColor(betRecommendation.riskAlert.level)}`}>
+                                <h5 className="font-bold flex items-center gap-2">
+                                    <AlertTriangleIcon className="w-5 h-5"/>
+                                    Alerta de Risco: {betRecommendation.riskAlert.level}
+                                </h5>
+                                <p className="text-sm mt-1">{betRecommendation.riskAlert.message}</p>
+                            </div>
+                        )}
+                        <div>
+                            <h5 className="font-bold text-brand-primary">{betRecommendation.recommendationTitle}</h5>
+                            <p className="text-sm text-brand-text-secondary mt-1">{betRecommendation.analysisSummary}</p>
+                        </div>
+                        <div>
+                            <h5 className="font-bold text-brand-primary">Conselho Estratégico</h5>
+                            <p className="text-sm text-brand-text-secondary mt-1">{betRecommendation.strategicAdvice}</p>
+                        </div>
                     </div>
-                     <div>
-                        <h4 className="font-bold text-brand-primary">Conselho Estratégico</h4>
-                        <p className="text-sm text-brand-text-secondary mt-1">{result.strategicAdvice}</p>
+                     <div className="p-4">
+                         <button
+                            onClick={fetchAnalysis}
+                            className="w-full bg-brand-border text-brand-text-primary font-bold py-2 rounded-md hover:bg-gray-700 transition-colors flex items-center justify-center gap-2"
+                            disabled={loading}
+                        >
+                            <RefreshCwIcon className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Reanalisar
+                        </button>
                     </div>
-                     <button
-                        onClick={fetchRecommendation}
-                        className="w-full mt-2 bg-brand-border text-brand-text-primary font-bold py-2 rounded-md hover:bg-gray-700 transition-colors flex items-center justify-center gap-2"
-                        disabled={loading}
-                    >
-                        <RefreshCwIcon className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Reanalisar
-                    </button>
                 </div>
             );
         }
 
-        return null;
+        return (
+            <div className="p-4 text-center">
+                <p className="text-brand-text-secondary mb-4">Peça ao assistente para analisar seu desempenho e obter recomendações.</p>
+                <button
+                    onClick={fetchAnalysis}
+                    className="w-full bg-brand-primary text-white font-bold py-2 px-4 rounded-md hover:bg-brand-primary-hover transition-colors flex items-center justify-center gap-2"
+                    disabled={loading}
+                >
+                    <SparklesIcon className="w-5 h-5" /> Analisar Desempenho
+                </button>
+            </div>
+        );
     };
 
     return (
