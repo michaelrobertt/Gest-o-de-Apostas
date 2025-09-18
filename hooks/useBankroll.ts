@@ -130,6 +130,7 @@ export const useBankroll = () => {
                     }
 
                     const validatedBets = (data.bets as any[]).map((b): Bet => {
+                        // Handle legacy or different status formats
                         let status: BetStatus;
                         switch (b.status) {
                             case 'Vitória':
@@ -148,10 +149,12 @@ export const useBankroll = () => {
                                 status = BetStatus.PENDING;
                         }
                         
+                        // Handle legacy field names for value (stake) and profitLoss (profit)
                         const value = b.value ?? b.stake ?? 0;
                         const odd = b.odd ?? 1;
                         let profitLoss = b.profitLoss ?? b.profit;
 
+                        // Recalculate profit/loss if it's missing, ensuring data integrity
                         if (profitLoss === undefined && status !== BetStatus.PENDING) {
                             if (status === BetStatus.WON) {
                                 profitLoss = value * (odd - 1);
@@ -272,6 +275,7 @@ export const useBankroll = () => {
             averageOdd,
             existingTeams,
             totalWithdrawn,
+            totalInvested,
         };
     }, [state.bets, state.initialBankroll, state.blacklistedTeams, state.withdrawals]);
 

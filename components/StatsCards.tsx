@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { toast } from 'react-hot-toast';
 import { Stats } from '../types';
 import Modal from './Modal';
-import { ArrowUpIcon, ArrowDownIcon, PencilIcon, CheckIcon, XIcon, TrendingUpIcon, ScaleIcon, CalculatorIcon, BanknotesIcon } from './icons';
+import { ArrowUpIcon, ArrowDownIcon, PencilIcon, CheckIcon, TrendingUpIcon, ScaleIcon, CalculatorIcon, BanknotesIcon, CircleStackIcon } from './icons';
 
 
 interface StatCardProps {
@@ -114,6 +114,12 @@ const StatsCards: React.FC<StatsCardsProps> = ({ stats, onSetInitialBankroll, on
                     description={`${stats.wonBetsCount}V / ${stats.resolvedBetsCount - stats.wonBetsCount}D`}
                     icon={profitIcon}
                     colorClass={profitColor}
+                />
+                <StatCard
+                    title="Total Investido"
+                    value={formatCurrency(stats.totalInvested)}
+                    description="Soma de todos os stakes"
+                    icon={<CircleStackIcon className="w-5 h-5 text-brand-text-secondary"/>}
                 />
                  <StatCard
                     title="ROI (Retorno)"

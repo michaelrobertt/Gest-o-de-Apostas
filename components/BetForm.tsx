@@ -111,10 +111,11 @@ interface SpecificSelectionState {
 }
 
 const initialSelectionState: SelectionFormState = { market: Market.LOL, league: LolLeague.LPL, betType: BET_TYPES[Market.LOL][0], details: '', odd: '' };
+const initialSingleBetState: SingleBetState = { teamA: '', teamB: '', odd: '', betType: BET_TYPES[Market.LOL][0], market: Market.LOL, league: LolLeague.LPL };
 
 const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeams, deleteTeamSuggestion }) => {
     const [betStructure, setBetStructure] = useState<'Single' | 'Accumulator'>('Single');
-    const [singleBetState, setSingleBetState] = useState<SingleBetState>({ teamA: '', teamB: '', odd: '', betType: BET_TYPES[Market.LOL][0], market: Market.LOL, league: LolLeague.LPL });
+    const [singleBetState, setSingleBetState] = useState<SingleBetState>(initialSingleBetState);
     const [specificSelection, setSpecificSelection] = useState<SpecificSelectionState>({});
     const [selections, setSelections] = useState<BetSelection[]>([]);
     const [currentSelection, setCurrentSelection] = useState<SelectionFormState>(initialSelectionState);
@@ -126,6 +127,16 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeam
     useEffect(() => { handleUnitChange(units) }, [currentBankroll]);
     
     useEffect(() => { setSpecificSelection({}) }, [singleBetState.betType, singleBetState.market]);
+
+    useEffect(() => {
+        // Reset specific states when switching between Single and Accumulator to prevent data leakage
+        setSingleBetState(initialSingleBetState);
+        setSpecificSelection({});
+        setSelections([]);
+        setCurrentSelection(initialSelectionState);
+        handleUnitChange('1');
+    }, [betStructure]);
+
 
     const handleUnitChange = (newUnits: string) => {
         setUnits(newUnits);
@@ -309,28 +320,35 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeam
 
     const renderSingleBetForm = () => (
         <>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <select value={singleBetState.market} onChange={e => setSingleBetState(p => ({ ...p, market: e.target.value as Market, league: e.target.value === Market.LOL ? LolLeague.LPL : 'N/A', betType: BET_TYPES[e.target.value as Market][0] }))} className="w-full bg-brand-bg border border-brand-border rounded-md p-2">
-                    {MARKETS.map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-                {singleBetState.market === Market.LOL && (
-                    <select value={singleBetState.league} onChange={e => setSingleBetState(p => ({ ...p, league: e.target.value as LolLeague }))} className="w-full bg-brand-bg border border-brand-border rounded-md p-2">
-                        {LOL_LEAGUES.map(l => <option key={l} value={l}>{l}</option>)}
+            <fieldset className="border border-brand-border p-3 rounded-md space-y-4">
+                <legend className="text-sm font-medium text-brand-text-secondary px-2">Evento</legend>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <select value={singleBetState.market} onChange={e => setSingleBetState(p => ({ ...p, market: e.target.value as Market, league: e.target.value === Market.LOL ? LolLeague.LPL : 'N/A', betType: BET_TYPES[e.target.value as Market][0] }))} className="w-full bg-brand-bg border border-brand-border rounded-md p-2">
+                        {MARKETS.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
-                )}
-            </div>
-            <div className="flex items-center gap-2">
-                <TeamInput value={singleBetState.teamA} onChange={e => setSingleBetState(p => ({ ...p, teamA: e.target.value }))} placeholder="Time A" teams={existingTeams[singleBetState.market] || []} onDeleteTeam={deleteTeamSuggestion} />
-                <span>vs</span>
-                <TeamInput value={singleBetState.teamB} onChange={e => setSingleBetState(p => ({ ...p, teamB: e.target.value }))} placeholder="Time B" teams={existingTeams[singleBetState.market] || []} onDeleteTeam={deleteTeamSuggestion} />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                 <select value={singleBetState.betType} onChange={e => setSingleBetState(p => ({ ...p, betType: e.target.value }))} className="w-full bg-brand-bg border border-brand-border rounded-md p-2">
-                    {BET_TYPES[singleBetState.market].map(bt => <option key={bt} value={bt}>{bt}</option>)}
-                </select>
-                <input type="number" step="0.01" value={singleBetState.odd} onChange={e => setSingleBetState(p => ({ ...p, odd: e.target.value }))} className="w-full bg-brand-bg border border-brand-border rounded-md p-2" placeholder="Odd. Ex: 1.85" />
-            </div>
-            {renderBetTypeSpecificInputs()}
+                    {singleBetState.market === Market.LOL && (
+                        <select value={singleBetState.league} onChange={e => setSingleBetState(p => ({ ...p, league: e.target.value as LolLeague }))} className="w-full bg-brand-bg border border-brand-border rounded-md p-2">
+                            {LOL_LEAGUES.map(l => <option key={l} value={l}>{l}</option>)}
+                        </select>
+                    )}
+                </div>
+                <div className="flex items-center gap-2">
+                    <TeamInput value={singleBetState.teamA} onChange={e => setSingleBetState(p => ({ ...p, teamA: e.target.value }))} placeholder="Time A" teams={existingTeams[singleBetState.market] || []} onDeleteTeam={deleteTeamSuggestion} />
+                    <span>vs</span>
+                    <TeamInput value={singleBetState.teamB} onChange={e => setSingleBetState(p => ({ ...p, teamB: e.target.value }))} placeholder="Time B" teams={existingTeams[singleBetState.market] || []} onDeleteTeam={deleteTeamSuggestion} />
+                </div>
+            </fieldset>
+
+            <fieldset className="border border-brand-border p-3 rounded-md space-y-4">
+                <legend className="text-sm font-medium text-brand-text-secondary px-2">Aposta</legend>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                     <select value={singleBetState.betType} onChange={e => setSingleBetState(p => ({ ...p, betType: e.target.value }))} className="w-full bg-brand-bg border border-brand-border rounded-md p-2">
+                        {BET_TYPES[singleBetState.market].map(bt => <option key={bt} value={bt}>{bt}</option>)}
+                    </select>
+                    <input type="number" step="0.01" value={singleBetState.odd} onChange={e => setSingleBetState(p => ({ ...p, odd: e.target.value }))} className="w-full bg-brand-bg border border-brand-border rounded-md p-2" placeholder="Odd. Ex: 1.85" />
+                </div>
+                {renderBetTypeSpecificInputs()}
+            </fieldset>
         </>
     );
 
@@ -390,19 +408,24 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeam
             </div>
             <form onSubmit={handleSubmit} className="space-y-4">
                 {betStructure === 'Single' ? renderSingleBetForm() : renderAccumulatorForm()}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-brand-border pt-4">
-                    <div>
-                        <label htmlFor="units" className="block text-sm font-medium text-brand-text-secondary mb-1">Unidades</label>
-                        <select id="units" value={units} onChange={(e) => handleUnitChange(e.target.value)} className="w-full bg-brand-bg border border-brand-border rounded-md p-2">
-                            <option value="manual">Manual</option>
-                            {UNITS.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
-                        </select>
+                
+                <fieldset className="border border-brand-border p-3 rounded-md">
+                    <legend className="text-sm font-medium text-brand-text-secondary px-2">Investimento</legend>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                        <div>
+                            <label htmlFor="units" className="block text-sm font-medium text-brand-text-secondary mb-1">Unidades</label>
+                            <select id="units" value={units} onChange={(e) => handleUnitChange(e.target.value)} className="w-full bg-brand-bg border border-brand-border rounded-md p-2">
+                                <option value="manual">Manual</option>
+                                {UNITS.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label htmlFor="value" className="block text-sm font-medium text-brand-text-secondary mb-1">Valor (R$)</label>
+                            <input id="value" type="number" step="0.01" value={value} onChange={e => { setValue(e.target.value); setUnits('manual'); }} className="w-full bg-brand-bg border border-brand-border rounded-md p-2" placeholder="25.00" />
+                        </div>
                     </div>
-                    <div>
-                        <label htmlFor="value" className="block text-sm font-medium text-brand-text-secondary mb-1">Valor (R$)</label>
-                        <input id="value" type="number" step="0.01" value={value} onChange={e => { setValue(e.target.value); setUnits('manual'); }} className="w-full bg-brand-bg border border-brand-border rounded-md p-2" placeholder="25.00" />
-                    </div>
-                </div>
+                </fieldset>
+
                 <button type="submit" className="w-full bg-brand-primary text-white font-bold py-3 rounded-md hover:bg-brand-primary-hover transition-colors disabled:bg-gray-500">
                     Adicionar Aposta
                 </button>

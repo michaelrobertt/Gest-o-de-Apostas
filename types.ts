@@ -65,6 +65,7 @@ export interface Stats {
     averageOdd: number;
     existingTeams: Record<Market, string[]>;
     totalWithdrawn: number;
+    totalInvested: number;
 }
 
 export interface BankrollHistoryPoint {
