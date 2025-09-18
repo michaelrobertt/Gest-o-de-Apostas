@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Bet, BankrollData, BetStatus, Stats, ChartsData, Market, LolLeague, Withdrawal } from '../types';
+// FIX: Import BankrollHistoryPoint to explicitly type the bankrollHistory constant.
+import { Bet, BankrollData, BetStatus, Stats, ChartsData, Market, LolLeague, Withdrawal, BankrollHistoryPoint, MarketPerformancePoint } from '../types';
 
 const LOCAL_STORAGE_KEY = 'betting-tracker-data';
 
@@ -164,8 +165,10 @@ export const useBankroll = () => {
                             date: b.date || new Date().toISOString(),
                             market: b.market || Market.LOL,
                             league: b.league || b.context || 'N/A',
+                            betStructure: b.betStructure || 'Single',
                             betType: b.betType || 'N/A',
                             details: b.details || b.betDetail || '',
+                            selections: b.selections || undefined,
                             units: b.units || 0,
                             value: value,
                             odd: odd,
@@ -233,7 +236,7 @@ export const useBankroll = () => {
         const averageOdd = wonBets.length > 0 ? wonBets.reduce((acc, b) => acc + b.odd, 0) / wonBets.length : 0;
         
         const teamRegex = /(.+?)\s*(?:vs|x)\s*(.+)/i;
-        const cleanHandicap = (teamName: string) => teamName.replace(/\s*[-+]\d+(\.\d+)?$/, '').trim();
+        const cleanHandicap = (teamName: string) => teamName.replace(/\s*[-+]\d+(\.\d+)?$/, '').trim().split('|')[0].trim();
         
         const teamsByMarket: Record<Market, Set<string>> = {
             [Market.LOL]: new Set(),
@@ -278,12 +281,27 @@ export const useBankroll = () => {
             .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
         
         let cumulativeBankroll = state.initialBankroll;
-        const bankrollHistory = [{ date: 'Início', value: state.initialBankroll }];
-        resolvedBetsSorted.forEach(bet => {
+        let lastDate: string | null = null;
+
+        const bankrollHistory: BankrollHistoryPoint[] = [{ 
+            betNumber: 0, 
+            value: state.initialBankroll, 
+            isNewDay: true, 
+            date: resolvedBetsSorted.length > 0 ? resolvedBetsSorted[0].date : new Date().toISOString() 
+        }];
+
+        resolvedBetsSorted.forEach((bet, index) => {
             cumulativeBankroll += bet.profitLoss;
+            const currentDate = bet.date.split('T')[0];
+            const isNewDay = currentDate !== lastDate;
+            lastDate = currentDate;
+
             bankrollHistory.push({
-                date: new Date(bet.date).toLocaleDateString('pt-BR'),
-                value: cumulativeBankroll,
+                betNumber: index + 1,
+                value: parseFloat(cumulativeBankroll.toFixed(2)), // FIX: Round to 2 decimal places to avoid floating point issues
+                bet: bet,
+                isNewDay: isNewDay,
+                date: bet.date,
             });
         });
 
@@ -291,20 +309,52 @@ export const useBankroll = () => {
         state.bets
             .filter(b => b.status !== BetStatus.PENDING)
             .forEach(bet => {
-                // Always aggregate by Market
-                performanceMap[bet.market] = (performanceMap[bet.market] || 0) + bet.profitLoss;
+                const marketName = bet.market === Market.LOL ? 'League of Legends' : bet.market;
+                performanceMap[marketName] = (performanceMap[marketName] || 0) + bet.profitLoss;
 
-                // If it's a LoL bet and has a specific league, also aggregate by that league
-                if (bet.market === Market.LOL && bet.league && bet.league !== 'N/A') {
+                if (bet.market === Market.LOL && bet.league && bet.league.trim() && bet.league !== 'N/A') {
                     if (Object.values(LolLeague).includes(bet.league as LolLeague)) {
                         performanceMap[bet.league] = (performanceMap[bet.league] || 0) + bet.profitLoss;
                     }
                 }
             });
-
-        const performanceByMarket = Object.entries(performanceMap)
+        
+        const allPerformanceItems = Object.entries(performanceMap)
             .map(([name, profit]) => ({ name, profit }))
-            .filter(item => Math.abs(item.profit) > 0.01); // Filter out zero or negligible profits
+            .filter(item => Math.abs(item.profit) > 0.01 && item.name);
+
+        const lolLeagueNames = Object.values(LolLeague);
+        const lolItemNames = [Market.LOL, ...lolLeagueNames];
+
+        const lolItems = allPerformanceItems.filter(item => lolItemNames.includes(item.name as any));
+        const otherItems = allPerformanceItems.filter(item => !lolItemNames.includes(item.name as any));
+
+        lolItems.sort((a, b) => {
+            if (a.name === Market.LOL) return -1;
+            if (b.name === Market.LOL) return 1;
+            return b.profit - a.profit;
+        });
+
+        const lolGroupSortKey = lolItems.find(item => item.name === Market.LOL)?.profit ?? -Infinity;
+
+        otherItems.sort((a, b) => b.profit - a.profit);
+
+        let performanceByMarket: MarketPerformancePoint[] = [];
+        if (lolItems.length > 0) {
+            let lolGroupInserted = false;
+            for (const otherItem of otherItems) {
+                if (otherItem.profit <= lolGroupSortKey && !lolGroupInserted) {
+                    performanceByMarket.push(...lolItems);
+                    lolGroupInserted = true;
+                }
+                performanceByMarket.push(otherItem);
+            }
+            if (!lolGroupInserted) {
+                performanceByMarket.push(...lolItems);
+            }
+        } else {
+            performanceByMarket = otherItems;
+        }
 
         return { bankrollHistory, performanceByMarket };
     }, [state.bets, state.initialBankroll]);

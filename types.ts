@@ -1,4 +1,3 @@
-// FIX: Removed a conflicting self-import of 'Market' that caused a circular dependency.
 export enum Market {
     LOL = 'League of Legends',
     CS2 = 'Counter-Strike 2',
@@ -20,13 +19,21 @@ export enum BetStatus {
     LOST = 'Perdeu',
 }
 
+export interface BetSelection {
+    details: string;
+    betType: string;
+    odd: number;
+}
+
 export interface Bet {
     id: string;
     date: string;
     market: Market;
     league: LolLeague | string;
+    betStructure: 'Single' | 'Accumulator';
     betType: string;
     details: string;
+    selections?: BetSelection[];
     units: number;
     value: number;
     odd: number;
@@ -61,8 +68,11 @@ export interface Stats {
 }
 
 export interface BankrollHistoryPoint {
-    date: string;
+    betNumber: number;
     value: number;
+    bet?: Bet;
+    isNewDay: boolean;
+    date: string;
 }
 
 export interface MarketPerformancePoint {

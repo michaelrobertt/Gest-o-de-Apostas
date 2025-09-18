@@ -56,9 +56,9 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ bets, stats, performanceByMar
 
     const getAlertColor = (level: 'Baixo' | 'Médio' | 'Alto' | 'Nenhum') => {
         switch (level) {
-            case 'Alto': return 'bg-red-900/50 border-brand-danger text-red-300';
-            case 'Médio': return 'bg-yellow-900/50 border-yellow-500 text-yellow-300';
-            case 'Baixo': return 'bg-blue-900/50 border-blue-500 text-blue-300';
+            case 'Alto': return 'bg-red-900/30 border-brand-danger text-red-300';
+            case 'Médio': return 'bg-yellow-900/30 border-yellow-500 text-yellow-300';
+            case 'Baixo': return 'bg-blue-900/30 border-blue-500 text-blue-300';
             default: return '';
         }
     };
@@ -125,7 +125,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ bets, stats, performanceByMar
                     <div className="space-y-4 p-4">
                          <h4 className="font-bold text-brand-text-primary flex items-center gap-2">
                             <SparklesIcon className="w-5 h-5 text-brand-primary" />
-                            Análise de Aposta
+                            {betRecommendation.recommendationTitle}
                         </h4>
                         {betRecommendation.riskAlert && betRecommendation.riskAlert.level !== 'Nenhum' && (
                             <div className={`p-3 rounded-md border ${getAlertColor(betRecommendation.riskAlert.level)}`}>
@@ -133,15 +133,18 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ bets, stats, performanceByMar
                                     <AlertTriangleIcon className="w-5 h-5"/>
                                     Alerta de Risco: {betRecommendation.riskAlert.level}
                                 </h5>
-                                <p className="text-sm mt-1">{betRecommendation.riskAlert.message}</p>
+                                <div className="text-sm mt-2 space-y-2">
+                                  {betRecommendation.riskAlert.message.split('\n').map((paragraph, index) => (
+                                      <p key={index}>{paragraph}</p>
+                                  ))}
+                                </div>
                             </div>
                         )}
-                        <div>
-                            <h5 className="font-bold text-brand-primary">{betRecommendation.recommendationTitle}</h5>
+                        {betRecommendation.riskAlert?.level === 'Nenhum' && (
                             <p className="text-sm text-brand-text-secondary mt-1">{betRecommendation.analysisSummary}</p>
-                        </div>
+                        )}
                         <div>
-                            <h5 className="font-bold text-brand-primary">Conselho Estratégico</h5>
+                            <h5 className="font-bold text-brand-primary mt-2">Conselho Estratégico</h5>
                             <p className="text-sm text-brand-text-secondary mt-1">{betRecommendation.strategicAdvice}</p>
                         </div>
                     </div>

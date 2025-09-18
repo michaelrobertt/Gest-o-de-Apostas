@@ -25,12 +25,37 @@ export const parseBetsFromImage = async (imageFile: File): Promise<Partial<Bet>[
 
     const imagePart = await fileToGenerativePart(imageFile);
 
+    // FIX: Escaped backticks inside the template literal to prevent them from being parsed as variables.
+    const promptText = `
+Analise esta imagem de um boletim de aposta e extraia as informações de CADA aposta.
+Sua principal tarefa é DIFERENCIAR entre um boletim com múltiplas apostas INDIVIDUAIS e um boletim com uma ÚNICA aposta COMBINADA (ex: Múltipla, Acumulada, Dupla, Tripla).
+
+1.  **SE for uma aposta COMBINADA (Múltipla/Acumulada):**
+    *   Procure por palavras-chave como "Múltipla", "Acumulada", "Dupla", etc.
+    *   Verifique se há um único valor de aposta total (stake) e um único valor de retorno potencial para várias seleções.
+    *   **Resultado:** Retorne um ÚNICO objeto JSON dentro de um array.
+        *   \`betStructure\`: "Accumulator"
+        *   \`betType\`: "Acumulada"
+        *   \`details\`: Um resumo, como "Acumulada de 3 seleções".
+        *   \`value\`: O valor TOTAL apostado.
+        *   \`odd\`: A ODD TOTAL combinada.
+        *   \`selections\`: Um array onde cada objeto representa uma seleção individual da múltipla, contendo \`details\`, \`betType\`, e \`odd\` para aquela seleção.
+
+2.  **SE forem múltiplas apostas INDIVIDUAIS:**
+    *   Cada aposta terá seu próprio valor (stake) e sua própria odd.
+    *   **Resultado:** Retorne um ARRAY de objetos JSON, um para cada aposta individual encontrada.
+        *   \`betStructure\`: "Single"
+        *   Preencha os outros campos (\`market\`, \`league\`, \`details\`, \`betType\`, \`value\`, \`odd\`) para cada aposta.
+
+**Sempre retorne um array de objetos, mesmo que encontre apenas uma aposta.**
+`;
+
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: {
             parts: [
                 imagePart,
-                { text: "Analise esta imagem de um boletim de aposta. Extraia as seguintes informações para CADA aposta que encontrar na imagem: mercado (deve ser um dos seguintes: 'League of Legends', 'Counter-Strike 2', 'Futebol'), liga, times envolvidos (no formato 'Time A vs Time B'), tipo de aposta, valor apostado (stake) e a odd. Retorne uma lista de objetos, um para cada aposta." }
+                { text: promptText }
             ],
         },
         config: {
@@ -40,31 +65,25 @@ export const parseBetsFromImage = async (imageFile: File): Promise<Partial<Bet>[
                 items: {
                     type: Type.OBJECT,
                     properties: {
-                        market: {
-                            type: Type.STRING,
-                            enum: Object.values(Market),
-                            description: "O mercado da aposta.",
-                        },
-                        league: {
-                            type: Type.STRING,
-                            description: "A liga, se aplicável (ex: LPL, CBLOL).",
-                        },
-                        details: {
-                            type: Type.STRING,
-                            description: "Os times envolvidos, no formato 'Time A vs Time B'.",
-                        },
-                        betType: {
-                            type: Type.STRING,
-                            description: "O tipo de aposta (ex: Moneyline, Handicap -1.5).",
-                        },
-                        value: {
-                            type: Type.NUMBER,
-                            description: "O valor apostado (stake).",
-                        },
-                        odd: {
-                            type: Type.NUMBER,
-                            description: "A odd da aposta.",
-                        },
+                        market: { type: Type.STRING, enum: Object.values(Market) },
+                        league: { type: Type.STRING },
+                        betStructure: { type: Type.STRING, enum: ['Single', 'Accumulator'] },
+                        betType: { type: Type.STRING },
+                        details: { type: Type.STRING },
+                        value: { type: Type.NUMBER },
+                        odd: { type: Type.NUMBER },
+                        selections: {
+                            type: Type.ARRAY,
+                            nullable: true,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    details: { type: Type.STRING },
+                                    betType: { type: Type.STRING },
+                                    odd: { type: Type.NUMBER },
+                                }
+                            }
+                        }
                     },
                 }
             },
@@ -76,7 +95,6 @@ export const parseBetsFromImage = async (imageFile: File): Promise<Partial<Bet>[
         if (Array.isArray(parsedJson)) {
             return parsedJson as Partial<Bet>[];
         }
-        // Handle cases where the API might still return a single object
         if (typeof parsedJson === 'object' && parsedJson !== null) {
             return [parsedJson as Partial<Bet>];
         }
@@ -96,36 +114,61 @@ export const getAIRecommendation = async (
         throw new Error("A chave da API do Gemini não está configurada.");
     }
 
+    // Sort bets chronologically (oldest to newest) to analyze behavior patterns
     const recentBets = bets
         .filter(b => b.status !== BetStatus.PENDING)
-        .slice(0, 20)
-        .map(({ market, league, units, odd, status, profitLoss }) => ({ market, league, units, odd, status, profitLoss }));
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+        .slice(-20) // Take the last 20
+        .map(({ market, league, units, odd, status, profitLoss, details }) => ({ details, market, league, units, odd, status, profitLoss }));
 
     const systemInstruction = `
-Você é um analista de apostas esportivas e gestão de banca de classe mundial, especializado em análise quantitativa, psicologia do apostador e mitigação de riscos. Seu objetivo é fornecer um plano disciplinado, escalável e orientado a resultados. Aja com rigor analítico e realismo.
+Você é um Assistente de Gestão de Banca com Expertise em Psicologia Comportamental, especializado em detectar e corrigir vieses cognitivos que prejudicam apostadores. Sua função não é apenas analisar números, mas atuar como um coach de performance que compreende profundamente como o cérebro humano funciona em situações de risco e incerteza.
 
-**Sua Tarefa:**
-Analise os dados fornecidos sobre o desempenho de um apostador e forneça uma recomendação clara para a PRÓXIMA aposta. Sua análise deve otimizar a lucratividade a longo prazo, preservando a banca.
+**CONHECIMENTO CIENTÍFICO FUNDAMENTAL**
+- **Sistema de Recompensa:** O cérebro processa perdas com o dobro da intensidade de ganhos equivalentes, levando a decisões irracionais.
+- **Controle Executivo:** O córtex pré-frontal, responsável pelo controle de impulsos, tem sua atividade reduzida durante apostas, tornando a disciplina mais difícil.
+- **Neuroplasticidade:** O cérebro pode ser retreinado através de práticas disciplinadas e feedback consistente.
 
-**Dados Fornecidos:**
-1.  **Estatísticas Gerais:** ROI, taxa de acerto, lucro total, etc.
-2.  **Histórico Recente:** As últimas 20 apostas resolvidas.
-3.  **Desempenho por Mercado/Liga:** Lucro/prejuízo agregado para cada modalidade.
+**VIESES COGNITIVOS CRÍTICOS A DETECTAR**
+1.  **Aversão à Perda (Loss Aversion / Tilt):**
+    *   **Manifestação:** Aumento reativo de stakes (unidades) após derrotas.
+    *   **Detecção:** Analise se há aumento de unidades (ex: de 1U para 2U) imediatamente após sequências de 1 a 3 derrotas. Ignore apostas com 0 unidades. Um padrão crítico é um aumento de stake superior a 150% da unidade padrão (ex: saltar de 1U para 3U).
+2.  **Falácia da Mão Quente (Hot Hand Fallacy / Overconfidence):**
+    *   **Manifestação:** Aumento de stakes após vitórias consecutivas.
+    *   **Detecção:** Analise se há escalada de unidades durante sequências de vitórias. Um limiar crítico é um aumento de stake superior a 200% da unidade (ex: de 1U para 3U ou mais) durante uma streak positiva. Ignore apostas com 0 unidades.
 
-**Instruções de Análise:**
-1.  **Identificar Tendências:** Procure por sequências de vitórias (streaks) ou derrotas (slumps). Estão concentradas em algum mercado, liga ou tipo de aposta específico?
-2.  **Análise de Desempenho:** Compare o ROI e a taxa de acerto gerais com o desempenho recente. O apostador está em uma fase boa ou ruim? O desempenho é consistente?
-3.  **Avaliação de Risco (Psicologia):** Com base no tamanho das unidades apostadas e nos resultados recentes, detecte sinais de comportamento de risco:
-    *   **Tilt/Perseguição de Perdas:** O apostador aumentou as unidades logo após uma ou mais derrotas? Isso é um sinal de alerta ALTO.
-    *   **Excesso de Confiança:** O apostador aumentou as unidades drasticamente após uma sequência de vitórias? Isso é um alerta MÉDIO.
-    *   **Disciplina:** O apostador mantém um tamanho de unidade consistente, independentemente dos resultados recentes? Isso é um bom sinal.
-4.  **Estratégia de Staking (Unidades):** Com base em sua análise, sugira um tamanho de unidade para a próxima aposta (0.5, 1, 2, ou 3). A recomendação deve ser conservadora após derrotas (sugerir 0.5U ou 1U) e disciplinada após vitórias (manter ou aumentar moderadamente, mas evitar saltos para 3U sem uma justificativa muito forte).
-5.  **Aconselhamento Estratégico (Adaptabilidade):** Forneça conselhos práticos para ajustar a estratégia. Seja específico.
-    *   Exemplo Positivo: "Seu desempenho em League of Legends, especialmente na LCK, é excelente. Continue focando nesse nicho."
-    *   Exemplo de Melhoria: "O mercado de Handicap de Mapas em CS2 tem sido consistentemente negativo para você. Sugiro uma pausa nesse mercado ou a redução da unidade para 0.5U ao apostar nele."
+**PROTOCOLO DE ANÁLISE COMPORTAMENTAL**
+1.  **Análise Cronológica Obrigatória:** Sua análise DEVE se basear nas últimas 20 apostas na ordem cronológica EXATA para identificar padrões.
+2.  **Gestão de Banca Disciplinada:** Se NÃO detectar vieses e notar que o apostador mantém stakes consistentes, você DEVE elogiar essa disciplina.
 
-**Formato da Resposta:**
-Responda estritamente em JSON, seguindo o schema fornecido. Seja direto, objetivo e técnico.
+**ESTRUTURA DA RESPOSTA PSICOLógica (OBRIGATÓRIO)**
+
+**A) Quando DETECTAR Vieses:**
+*   **Título da Recomendação:** Comece com "Análise Comportamental".
+*   **Alerta de Risco:**
+    *   **Nível:** 'Alto' para Aversão à Perda, 'Médio' para Falácia da Mão Quente.
+    *   **Mensagem:** Deve ser um texto coeso e de fácil leitura. 
+        1. Identifique o viés (ex: "Você demonstrou o viés de Aversão à Perda, também conhecido como 'Tilt'.").
+        2. CITE O PADRÃO EXATO de forma clara e humana, referenciando os detalhes da aposta, não timestamps (ex: "Notei que após duas perdas consecutivas, você aumentou sua aposta para 3 unidades.").
+        3. Use uma quebra de linha (\\n).
+        4. Explique a neurociência por trás de forma simples (ex: "Neurocientificamente, seu cérebro processa perdas com o dobro da intensidade emocional...").
+*   **Conselho Estratégico:** Forneça uma estratégia de correção clara (ex: "Recomendo um 'cooling-off period' e a redefinição de sua stake para 1% fixo da banca atual...").
+*   **Unidades Sugeridas:** Sugira uma unidade menor (ex: 0.5U ou 1U) como parte da correção.
+
+**B) Quando NÃO DETECTAR Vieses:**
+*   **Título da Recomendação:** "Gestão de Banca Disciplinada".
+*   **Alerta de Risco:** Nível 'Nenhum'.
+*   **Resumo da Análise:** 1. Elogie a disciplina (ex: "Excelente disciplina. Mesmo após a sequência de vitórias, você manteve sua gestão de unidades consistente..."). 2. Reforce o comportamento como indicador de maturidade psicológica.
+*   **Conselho Estratégico:** Dê conselhos baseados na performance (ex: "Continue focando no mercado de LCK. Considere explorar o Handicap de Mapas com sua unidade padrão.").
+*   **Unidades Sugeridas:** Recomende a manutenção ou um ajuste lógico.
+
+**LINGUAGEM E TOM**
+*   **Científico mas Acessível:** Use termos como "córtex pré-frontal", mas explique de forma clara.
+*   **Não Julgativo:** Vieses são naturais, não falhas pessoais.
+*   **Orientado a Soluções:** Foque em estratégias práticas.
+*   **Reforço Positivo:** Celebre a disciplina.
+
+Responda estritamente em JSON, seguindo o schema.
 `;
 
     const prompt = `
@@ -134,13 +177,13 @@ Análise de Desempenho do Apostador:
 **Estatísticas Gerais:**
 ${JSON.stringify({ roi: stats.roi, winRate: stats.winRate, totalProfitLoss: stats.totalProfitLoss, currentBankroll: stats.currentBankroll }, null, 2)}
 
-**Histórico Recente (últimas 20 apostas):**
+**Histórico Cronológico Recente (últimas 20 apostas resolvidas, da mais antiga para a mais nova):**
 ${JSON.stringify(recentBets, null, 2)}
 
 **Desempenho por Mercado/Liga:**
 ${JSON.stringify(performanceByMarket, null, 2)}
 
-Com base nesses dados, forneça sua análise e recomendação.
+Com base nesses dados, realize sua análise comportamental e quantitativa e forneça a recomendação, seguindo estritamente todas as regras e a estrutura de resposta definidas.
 `;
 
     const response = await ai.models.generateContent({
@@ -154,15 +197,15 @@ Com base nesses dados, forneça sua análise e recomendação.
                 properties: {
                     recommendationTitle: {
                         type: Type.STRING,
-                        description: "Um título claro e direto para a recomendação. Ex: 'Manter Disciplina: 1 Unidade' ou 'Aposta de Recuperação: 0.5 Unidade'."
+                        description: "Um título claro para a análise, como 'Análise Comportamental' ou 'Gestão de Banca Disciplinada'."
                     },
                     suggestedUnits: {
                         type: Type.NUMBER,
-                        description: "O número de unidades sugerido para a próxima aposta (0.5, 1, 2, ou 3)."
+                        description: "O número de unidades sugerido para a próxima aposta, baseado na análise psicológica."
                     },
                     analysisSummary: {
                         type: Type.STRING,
-                        description: "Resumo conciso da análise de desempenho, destacando o momento atual (positivo, negativo, neutro) e as razões."
+                        description: "Resumo conciso da análise de desempenho ou, no caso de disciplina, o elogio explícito."
                     },
                     riskAlert: {
                         type: Type.OBJECT,
@@ -171,17 +214,17 @@ Com base nesses dados, forneça sua análise e recomendação.
                             level: {
                                 type: Type.STRING,
                                 enum: ['Baixo', 'Médio', 'Alto', 'Nenhum'],
-                                description: "Nível do alerta de risco. 'Alto' para tilt, 'Médio' para excesso de confiança."
+                                description: "Nível do alerta de risco. 'Alto' para tilt, 'Médio' para excesso de confiança, 'Nenhum' para disciplina."
                             },
                             message: {
                                 type: Type.STRING,
-                                description: "A mensagem de alerta explicando o risco detectado. Ex: 'Sinais de 'tilt' detectados. Você aumentou sua unidade para 2U após 3 derrotas seguidas.'"
+                                description: "A mensagem de alerta explicando o viés, a neurociência e o padrão exato nos dados. Use quebras de linha (\\n) para separar parágrafos."
                             }
                         }
                     },
                     strategicAdvice: {
                         type: Type.STRING,
-                        description: "Aconselhamento estratégico prático e acionável. Ex: 'Focar em apostas Moneyline em LoL onde seu desempenho é mais forte e evitar o mercado de Escanteios em Futebol até analisar melhor sua estratégia.'"
+                        description: "Aconselhamento estratégico prático e acionável, incluindo estratégias de correção baseadas em evidências se um viés for detectado."
                     }
                 }
             }
