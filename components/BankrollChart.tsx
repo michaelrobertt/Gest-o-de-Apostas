@@ -24,7 +24,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
                                  <p className="font-semibold text-brand-text-primary">{bet.betType}</p>
                                  <ul className="list-disc list-inside text-brand-text-secondary text-xs pl-1 mt-1 space-y-0.5">
                                      {bet.selections.map((s, i) => (
-                                         <li key={i}>{s.details} (@{s.odd.toFixed(2)})</li>
+                                         <li key={i}>{s.details} (@{s.odd ? s.odd.toFixed(2) : 'N/A'})</li>
                                      ))}
                                  </ul>
                              </div>

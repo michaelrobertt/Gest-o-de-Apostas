@@ -103,7 +103,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ bets, stats, performanceByMar
                         {withdrawalSuggestion.shouldWithdraw && (
                             <div className="bg-brand-bg p-3 rounded-md">
                                 <p className="text-sm text-brand-text-secondary">Sugestão:</p>
-                                <p className="text-lg font-bold text-brand-primary">Sacar R$ {withdrawalSuggestion.suggestedAmount.toFixed(2)}</p>
+                                <p className="text-lg font-bold text-brand-primary">Sacar R$ {(withdrawalSuggestion.suggestedAmount || 0).toFixed(2)}</p>
                                 <button
                                     onClick={handleWithdrawSuggested}
                                     className="w-full mt-2 bg-brand-primary/80 text-white text-sm font-semibold py-2 rounded-md hover:bg-brand-primary transition-colors"

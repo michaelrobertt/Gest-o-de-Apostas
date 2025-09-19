@@ -81,7 +81,7 @@ export const useBankroll = () => {
                     } else if (updatedBet.status === BetStatus.LOST) {
                         profitLoss = -value;
                     }
-                    return { ...updatedBet, profitLoss, value, odd, units: Number(updatedBet.units) };
+                    return { ...updatedBet, profitLoss: parseFloat(profitLoss.toFixed(2)), value, odd, units: Number(updatedBet.units) };
                 }
                 return bet;
             });
@@ -96,7 +96,7 @@ export const useBankroll = () => {
             bets: prevState.bets.map(bet => {
                 if (bet.id === betId) {
                     const profitLoss = newStatus === BetStatus.WON ? bet.value * (bet.odd - 1) : -bet.value;
-                    return { ...bet, status: newStatus, profitLoss };
+                    return { ...bet, status: newStatus, profitLoss: parseFloat(profitLoss.toFixed(2)) };
                 }
                 return bet;
             }),
@@ -176,7 +176,7 @@ export const useBankroll = () => {
                             value: value,
                             odd: odd,
                             status: status,
-                            profitLoss: profitLoss ?? 0,
+                            profitLoss: profitLoss !== undefined ? parseFloat(Number(profitLoss).toFixed(2)) : 0,
                         };
 
                         return validatedBet;

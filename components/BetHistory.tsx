@@ -174,7 +174,7 @@ const BetRow: React.FC<BetRowProps> = ({ bet, onDelete, onUpdateStatus, onEdit }
                             <p className="font-semibold text-brand-text-primary text-sm">{bet.betType}</p>
                             <ul className="list-disc list-inside text-brand-text-secondary text-xs pl-2 mt-1 space-y-0.5">
                                 {bet.selections.map((s, i) => (
-                                    <li key={i}>{s.details} (@{s.odd.toFixed(2)})</li>
+                                    <li key={i}>{s.details} (@{s.odd ? s.odd.toFixed(2) : 'N/A'})</li>
                                 ))}
                             </ul>
                         </div>

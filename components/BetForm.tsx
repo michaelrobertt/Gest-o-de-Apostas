@@ -227,38 +227,84 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeam
     };
 
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
+        const files = e.target.files;
+        if (!files || files.length === 0) return;
+
         setIsProcessing(true);
-        toast.loading('Analisando imagem com IA...');
+        const loadingToastId = toast.loading(`Analisando ${files.length} imagem(ns) com IA...`);
+
         try {
-            const parsedBets = await parseBetsFromImage(file);
-            if (!parsedBets || parsedBets.length === 0) throw new Error("Nenhuma aposta válida foi encontrada na imagem.");
-            let successfulAdds = 0, errors = 0;
-            for (const pBet of parsedBets) {
-                if (pBet.details && pBet.value && pBet.odd && pBet.market && pBet.betType && pBet.betStructure) {
-                    const betValue = Number(pBet.value);
-                    let finalUnits = pBet.units || 0;
-                    
-                    if (finalUnits === 0 && betValue > 0) {
-                        if (currentBankroll > 0 && UNIT_PERCENTAGE > 0) {
-                            finalUnits = betValue / (currentBankroll * UNIT_PERCENTAGE);
+            const parsingPromises = Array.from(files).map(file => parseBetsFromImage(file));
+            const results = await Promise.allSettled(parsingPromises);
+
+            let totalSuccessfulAdds = 0;
+            let totalInvalidBets = 0;
+            let totalFailedImages = 0;
+
+            results.forEach(result => {
+                if (result.status === 'fulfilled') {
+                    const parsedBets = result.value;
+                    if (!parsedBets || parsedBets.length === 0) {
+                        return;
+                    }
+
+                    for (const pBet of parsedBets) {
+                        if (pBet.details && pBet.value && pBet.odd && pBet.market && pBet.betType && pBet.betStructure) {
+                            const betValue = Number(pBet.value);
+                            let finalUnits = pBet.units || 0;
+
+                            if (finalUnits === 0 && betValue > 0) {
+                                if (currentBankroll > 0 && UNIT_PERCENTAGE > 0) {
+                                    finalUnits = betValue / (currentBankroll * UNIT_PERCENTAGE);
+                                }
+                            }
+
+                            addBet({
+                                market: pBet.market,
+                                league: pBet.league || 'N/A',
+                                betStructure: pBet.betStructure,
+                                betType: pBet.betType,
+                                details: pBet.details,
+                                selections: pBet.selections,
+                                units: finalUnits,
+                                value: betValue,
+                                odd: Number(pBet.odd)
+                            });
+                            totalSuccessfulAdds++;
+                        } else {
+                            totalInvalidBets++;
                         }
                     }
-                
-                    addBet({ market: pBet.market, league: pBet.league || 'N/A', betStructure: pBet.betStructure, betType: pBet.betType, details: pBet.details, selections: pBet.selections, units: finalUnits, value: betValue, odd: Number(pBet.odd) });
-                    successfulAdds++;
-                } else errors++;
+                } else {
+                    totalFailedImages++;
+                    console.error("Falha ao analisar imagem:", result.reason);
+                }
+            });
+
+            toast.dismiss(loadingToastId);
+            
+            if (totalSuccessfulAdds > 0) {
+                toast.success(`${totalSuccessfulAdds} aposta(s) registrada(s) com sucesso!`);
             }
-            toast.dismiss();
-            if (successfulAdds > 0) toast.success(`${successfulAdds} aposta(s) registrada(s) com sucesso!`);
-            if (errors > 0) toast.error(`${errors} aposta(s) na imagem não puderam ser lidas.`);
+            if (totalInvalidBets > 0) {
+                toast.error(`${totalInvalidBets} aposta(s) nas imagens não puderam ser lidas completamente.`);
+            }
+            if (totalFailedImages > 0) {
+                toast.error(`Falha ao processar ${totalFailedImages} imagem(ns). Verifique o console para mais detalhes.`);
+            }
+            if (totalSuccessfulAdds === 0 && totalInvalidBets === 0 && totalFailedImages === 0) {
+                // FIX: Property 'info' does not exist on type 'toast'. Replaced with the default toast function.
+                toast("Nenhuma aposta foi encontrada nas imagens fornecidas.");
+            }
+
         } catch (error) {
-            toast.dismiss();
-            toast.error(error instanceof Error ? error.message : 'Erro desconhecido.');
+            toast.dismiss(loadingToastId);
+            toast.error(error instanceof Error ? error.message : 'Ocorreu um erro desconhecido.');
         } finally {
             setIsProcessing(false);
-            e.target.value = '';
+            if(e.target) {
+                e.target.value = '';
+            }
         }
     };
     
@@ -395,8 +441,8 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeam
                  <div className="border-t border-brand-border pt-4">
                     <label htmlFor="ai-upload" className="w-full flex flex-col items-center justify-center p-6 border-2 border-dashed border-brand-border rounded-lg cursor-pointer hover:bg-brand-bg transition-colors">
                         <UploadIcon className="w-10 h-10 text-brand-text-secondary mb-2" />
-                        <span className="text-brand-text-primary">Clique para carregar imagem do boletim</span>
-                        <input id="ai-upload" type="file" className="hidden" accept="image/*" onChange={handleImageUpload} disabled={isProcessing} />
+                        <span className="text-brand-text-primary">Clique para carregar imagem(ns) do boletim</span>
+                        <input id="ai-upload" type="file" className="hidden" accept="image/*" onChange={handleImageUpload} disabled={isProcessing} multiple />
                     </label>
                     {isProcessing && <p className="text-center mt-2 text-brand-primary animate-pulse">Processando...</p>}
                 </div>
