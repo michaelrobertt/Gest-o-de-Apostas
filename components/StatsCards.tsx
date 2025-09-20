@@ -95,7 +95,8 @@ const StatsCards: React.FC<StatsCardsProps> = ({ stats, onSetInitialBankroll, on
                     title="Banca Atual"
                     value={formatCurrency(stats.currentBankroll)}
                     description="Capital de giro disponível"
-                    icon={<TrendingUpIcon className="w-5 h-5 text-brand-text-secondary" />}
+                    icon={<TrendingUpIcon className="w-5 h-5 text-brand-blue" />}
+                    colorClass="text-brand-blue"
                     actionButton={
                         <button onClick={() => setIsWithdrawalModalOpen(true)} className="text-xs bg-brand-primary/20 text-brand-primary px-2 py-1 rounded hover:bg-brand-primary/40">
                             Sacar
@@ -106,7 +107,8 @@ const StatsCards: React.FC<StatsCardsProps> = ({ stats, onSetInitialBankroll, on
                     title="Total Sacado"
                     value={formatCurrency(stats.totalWithdrawn)}
                     description="Lucros realizados"
-                    icon={<BanknotesIcon className="w-5 h-5 text-brand-text-secondary" />}
+                    icon={<BanknotesIcon className="w-5 h-5 text-brand-yellow" />}
+                    colorClass="text-brand-yellow"
                 />
                 <StatCard
                     title="Lucro/Prejuízo Total"
@@ -119,7 +121,8 @@ const StatsCards: React.FC<StatsCardsProps> = ({ stats, onSetInitialBankroll, on
                     title="Total Investido"
                     value={formatCurrency(stats.totalInvested)}
                     description="Soma de todos os stakes"
-                    icon={<CircleStackIcon className="w-5 h-5 text-brand-text-secondary"/>}
+                    icon={<CircleStackIcon className="w-5 h-5 text-brand-indigo"/>}
+                    colorClass="text-brand-indigo"
                 />
                  <StatCard
                     title="ROI (Retorno)"
@@ -132,13 +135,15 @@ const StatsCards: React.FC<StatsCardsProps> = ({ stats, onSetInitialBankroll, on
                     title="Taxa de Acerto"
                     value={`${stats.winRate.toFixed(2)}%`}
                     description={`${stats.wonBetsCount} vitórias em ${stats.resolvedBetsCount} apostas`}
-                    icon={<CheckIcon className="w-5 h-5 text-brand-text-secondary"/>}
+                    icon={<CheckIcon className="w-5 h-5 text-brand-teal"/>}
+                    colorClass="text-brand-teal"
                 />
                 <StatCard
                     title="Odd Média (Vitórias)"
                     value={`@${stats.averageOdd.toFixed(2)}`}
                     description="Média das apostas ganhas"
-                    icon={<CalculatorIcon className="w-5 h-5 text-brand-text-secondary"/>}
+                    icon={<CalculatorIcon className="w-5 h-5 text-brand-violet"/>}
+                    colorClass="text-brand-violet"
                 />
 
             </div>

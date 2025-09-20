@@ -280,33 +280,57 @@ export const useBankroll = () => {
     }, [state.bets, state.initialBankroll, state.blacklistedTeams, state.withdrawals]);
 
     const chartsData = useMemo<ChartsData>(() => {
-        const resolvedBetsSorted = state.bets
-            .filter(b => b.status !== BetStatus.PENDING)
-            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        const resolvedBets = state.bets.filter(b => b.status !== BetStatus.PENDING);
+        const withdrawals = state.withdrawals || [];
+
+        const events: (
+            { type: 'bet'; data: Bet } |
+            { type: 'withdrawal'; data: Withdrawal }
+        )[] = [
+            ...resolvedBets.map(b => ({ type: 'bet' as const, data: b })),
+            ...withdrawals.map(w => ({ type: 'withdrawal' as const, data: w }))
+        ];
+    
+        events.sort((a, b) => new Date(a.data.date).getTime() - new Date(b.data.date).getTime());
         
         let cumulativeBankroll = state.initialBankroll;
         let lastDate: string | null = null;
 
-        const bankrollHistory: BankrollHistoryPoint[] = [{ 
-            betNumber: 0, 
-            value: state.initialBankroll, 
-            isNewDay: true, 
-            date: resolvedBetsSorted.length > 0 ? resolvedBetsSorted[0].date : new Date().toISOString() 
+        const firstEventDate = events.length > 0 ? events[0].data.date : new Date().toISOString();
+        const bankrollHistory: BankrollHistoryPoint[] = [{
+            eventNumber: 0,
+            value: state.initialBankroll,
+            isNewDay: true,
+            date: firstEventDate
         }];
 
-        resolvedBetsSorted.forEach((bet, index) => {
-            cumulativeBankroll += bet.profitLoss;
-            const currentDate = bet.date.split('T')[0];
+        events.forEach((event, index) => {
+            const currentDate = event.data.date.split('T')[0];
             const isNewDay = currentDate !== lastDate;
             lastDate = currentDate;
-
+    
+            let point: Partial<BankrollHistoryPoint>;
+    
+            if (event.type === 'bet') {
+                cumulativeBankroll += event.data.profitLoss;
+                point = {
+                    value: parseFloat(cumulativeBankroll.toFixed(2)),
+                    bet: event.data,
+                };
+            } else { // withdrawal
+                cumulativeBankroll -= event.data.amount;
+                point = {
+                    value: parseFloat(cumulativeBankroll.toFixed(2)),
+                    withdrawal: event.data,
+                };
+            }
+    
             bankrollHistory.push({
-                betNumber: index + 1,
-                value: parseFloat(cumulativeBankroll.toFixed(2)), // FIX: Round to 2 decimal places to avoid floating point issues
-                bet: bet,
+                ...point,
+                eventNumber: index + 1,
                 isNewDay: isNewDay,
-                date: bet.date,
-            });
+                date: event.data.date,
+            } as BankrollHistoryPoint);
         });
 
         const performanceMap: { [key: string]: number } = {};
@@ -361,7 +385,7 @@ export const useBankroll = () => {
         }
 
         return { bankrollHistory, performanceByMarket };
-    }, [state.bets, state.initialBankroll]);
+    }, [state.bets, state.initialBankroll, state.withdrawals]);
 
     return {
         state,

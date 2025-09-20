@@ -69,9 +69,10 @@ export interface Stats {
 }
 
 export interface BankrollHistoryPoint {
-    betNumber: number;
+    eventNumber: number;
     value: number;
     bet?: Bet;
+    withdrawal?: Withdrawal;
     isNewDay: boolean;
     date: string;
 }

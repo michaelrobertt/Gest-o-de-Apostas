@@ -10,11 +10,23 @@ const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
         const dataPoint = payload[0].payload;
         const bet = dataPoint.bet;
+        const withdrawal = dataPoint.withdrawal;
         return (
             <div className="bg-brand-bg border border-brand-border p-3 rounded-lg shadow-lg text-sm max-w-xs">
-                <p className="font-bold text-brand-text-primary mb-1">{`Aposta #${label}`}</p>
+                <p className="font-bold text-brand-text-primary mb-1">{`Evento #${label}`}</p>
                 <p className="text-brand-text-secondary mb-2">{`Banca: R$ ${dataPoint.value.toFixed(2)}`}</p>
                 
+                {withdrawal && (
+                    <div className="pt-2 border-t border-brand-border space-y-1">
+                        <p className="font-semibold text-yellow-400">Saque</p>
+                        <p className="text-xs text-brand-text-secondary">{new Date(withdrawal.date).toLocaleString('pt-BR')}</p>
+                        <p className="font-semibold">
+                            <span className="text-brand-text-secondary">Valor: </span>
+                            <span className="text-yellow-400">-R$ {withdrawal.amount.toFixed(2)}</span>
+                        </p>
+                    </div>
+                )}
+
                 {bet && (
                     <div className="pt-2 border-t border-brand-border space-y-1">
                         <p className="text-xs text-brand-text-secondary">{new Date(bet.date).toLocaleString('pt-BR')}</p>
@@ -53,7 +65,13 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 const CustomizedDot: React.FC<DotProps & { payload?: BankrollHistoryPoint }> = (props) => {
     const { cx, cy, payload } = props;
 
-    if (!payload || !payload.bet) {
+    if (!payload) return null;
+
+    if (payload.withdrawal) {
+        return <circle cx={cx} cy={cy} r={4} fill="#facc15" />; // Yellow for withdrawal
+    }
+
+    if (!payload.bet) {
         // Default dot for initial point
         return <circle cx={cx} cy={cy} r={4} fill="#10b981" />;
     }
@@ -65,8 +83,14 @@ const CustomizedDot: React.FC<DotProps & { payload?: BankrollHistoryPoint }> = (
 
 const CustomizedActiveDot: React.FC<DotProps & { payload?: BankrollHistoryPoint }> = (props) => {
     const { cx, cy, payload } = props;
+    
+    if (!payload) return null;
 
-    if (!payload || !payload.bet) {
+    if (payload.withdrawal) {
+        return <circle cx={cx} cy={cy} r={8} fill="#facc15" stroke="rgba(255, 255, 255, 0.5)" strokeWidth={2} />;
+    }
+
+    if (!payload.bet) {
         return <circle cx={cx} cy={cy} r={8} fill="#10b981" stroke="rgba(255, 255, 255, 0.5)" strokeWidth={2} />;
     }
 
@@ -80,9 +104,9 @@ const BankrollChart: React.FC<BankrollChartProps> = ({ data }) => {
     if (data.length <= 1) {
         return (
             <div className="bg-brand-surface p-4 rounded-lg border border-brand-border h-80">
-                <h3 className="text-lg font-semibold mb-4 text-brand-text-primary">Evolução da Banca por Aposta</h3>
+                <h3 className="text-lg font-semibold mb-4 text-brand-text-primary">Evolução da Banca por Evento</h3>
                 <div className="flex items-center justify-center h-full text-brand-text-secondary">
-                    <p>Adicione apostas resolvidas para ver a evolução da banca.</p>
+                    <p>Adicione eventos (apostas, saques) para ver a evolução da banca.</p>
                 </div>
             </div>
         );
@@ -98,7 +122,7 @@ const BankrollChart: React.FC<BankrollChartProps> = ({ data }) => {
 
     return (
         <div className="bg-brand-surface p-4 rounded-lg border border-brand-border h-80">
-            <h3 className="text-lg font-semibold mb-4 text-brand-text-primary">Evolução da Banca por Aposta</h3>
+            <h3 className="text-lg font-semibold mb-4 text-brand-text-primary">Evolução da Banca por Evento</h3>
             <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={data} margin={{ top: 5, right: 20, left: 10, bottom: 20 }}>
                     <defs>
@@ -109,12 +133,12 @@ const BankrollChart: React.FC<BankrollChartProps> = ({ data }) => {
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#2c2c2c" />
                     <XAxis 
-                        dataKey="betNumber" 
+                        dataKey="eventNumber" 
                         stroke="#a0a0a0" 
                         fontSize={12} 
                         tickLine={false} 
                         axisLine={false}
-                        label={{ value: 'Número da Aposta', position: 'insideBottom', offset: -15, fill: '#a0a0a0' }}
+                        label={{ value: 'Número do Evento', position: 'insideBottom', offset: -15, fill: '#a0a0a0' }}
                      />
                     <YAxis 
                         stroke="#a0a0a0" 
@@ -135,8 +159,8 @@ const BankrollChart: React.FC<BankrollChartProps> = ({ data }) => {
                          />
                     </ReferenceLine>
                     {data.map((point) => 
-                        point.isNewDay && point.betNumber > 0 ? (
-                            <ReferenceLine key={`day-sep-${point.betNumber}`} x={point.betNumber} stroke="#555555" strokeDasharray="2 5">
+                        point.isNewDay && point.eventNumber > 0 ? (
+                            <ReferenceLine key={`day-sep-${point.eventNumber}`} x={point.eventNumber} stroke="#555555" strokeDasharray="2 5">
                                 <Label 
                                     value={new Date(point.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} 
                                     position="top" 
