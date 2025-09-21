@@ -1,17 +1,18 @@
 import React, { useState, useCallback } from 'react';
 import { toast } from 'react-hot-toast';
-import { Bet, BetStatus, Stats, MarketPerformancePoint, AIRecommendation, AIWithdrawalSuggestion } from '../types';
+import { Bet, BetStatus, Stats, MarketPerformancePoint, AIRecommendation, AIWithdrawalSuggestion, Withdrawal } from '../types';
 import { getAIRecommendation, getAIWithdrawalSuggestion } from '../services/geminiService';
 import { AlertTriangleIcon, SparklesIcon, RefreshCwIcon, BanknotesIcon } from './icons';
 
 interface AIAssistantProps {
     bets: Bet[];
+    withdrawals: Withdrawal[];
     stats: Stats;
     performanceByMarket: MarketPerformancePoint[];
     onAddWithdrawal: (amount: number) => void;
 }
 
-const AIAssistant: React.FC<AIAssistantProps> = ({ bets, stats, performanceByMarket, onAddWithdrawal }) => {
+const AIAssistant: React.FC<AIAssistantProps> = ({ bets, withdrawals, stats, performanceByMarket, onAddWithdrawal }) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [betRecommendation, setBetRecommendation] = useState<AIRecommendation | null>(null);
@@ -34,7 +35,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ bets, stats, performanceByMar
         try {
             const [betRec, withdrawalSug] = await Promise.all([
                 getAIRecommendation(bets, stats, performanceByMarket),
-                getAIWithdrawalSuggestion(stats)
+                getAIWithdrawalSuggestion(stats, withdrawals)
             ]);
             setBetRecommendation(betRec);
             setWithdrawalSuggestion(withdrawalSug);
@@ -45,7 +46,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ bets, stats, performanceByMar
         } finally {
             setLoading(false);
         }
-    }, [bets, stats, performanceByMarket, canAnalyze]);
+    }, [bets, stats, performanceByMarket, canAnalyze, withdrawals]);
 
     const handleWithdrawSuggested = () => {
         if(withdrawalSuggestion?.suggestedAmount) {

@@ -76,6 +76,7 @@ const App: React.FC = () => {
                     </div>
                     <AIAssistant
                         bets={state.bets}
+                        withdrawals={state.withdrawals || []}
                         stats={stats}
                         performanceByMarket={chartsData.performanceByMarket}
                         onAddWithdrawal={addWithdrawal}

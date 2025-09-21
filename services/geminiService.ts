@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { Bet, Market, LolLeague, BetStatus, Stats, MarketPerformancePoint, AIRecommendation, AIWithdrawalSuggestion } from '../types';
+import { Bet, Market, LolLeague, BetStatus, Stats, MarketPerformancePoint, AIRecommendation, AIWithdrawalSuggestion, Withdrawal } from '../types';
 
 if (!process.env.API_KEY) {
   console.warn("API_KEY environment variable not set for Gemini. AI features will not work.");
@@ -241,37 +241,72 @@ Com base nesses dados, realize sua análise comportamental e quantitativa e forn
 };
 
 
-export const getAIWithdrawalSuggestion = async (stats: Stats): Promise<AIWithdrawalSuggestion> => {
+export const getAIWithdrawalSuggestion = async (stats: Stats, withdrawals: Withdrawal[]): Promise<AIWithdrawalSuggestion> => {
     if (!process.env.API_KEY) {
         throw new Error("A chave da API do Gemini não está configurada.");
     }
 
     const systemInstruction = `
-Você é um consultor financeiro especializado em gestão de banca para apostadores. Seu objetivo é ajudar o usuário a tomar decisões inteligentes sobre quando e quanto sacar para garantir lucros, proteger o capital e manter um crescimento sustentável da banca. Aja com prudência e foco na saúde financeira a longo prazo.
+Você é um consultor financeiro conservador e prudente, especializado em gestão de banca para apostadores. Seu objetivo principal é o crescimento sustentável e de longo prazo da banca. A realização de lucros é secundária à construção de um capital robusto. Aja com cautela.
 
-**Sua Tarefa:**
-Com base nas estatísticas financeiras fornecidas, determine se é um bom momento para o apostador fazer um saque. Se for, sugira um valor que equilibre a realização de lucros com a necessidade de manter capital suficiente para continuar apostando efetivamente.
+**PROTOCOLO DE DECISÃO ESTRITO (analisado em ordem de prioridade):**
 
-**Critérios de Análise:**
-1.  **Crescimento da Banca:** Compare a 'Banca Atual' com a 'Banca Inicial'. Um crescimento significativo (ex: mais de 50-100% de lucro sobre o valor inicial) é um forte indicador para um saque.
-2.  **Lucro Total:** Um 'Lucro/Prejuízo Total' positivo é um pré-requisito para qualquer saque.
-3.  **Saques Anteriores:** Considere o 'Total Sacado'. Se o usuário já sacou um valor considerável, pode ser prudente continuar a reinvestir os lucros para aumentar a banca.
-4.  **Valor do Saque Sugerido:** Se um saque for recomendado, o valor deve ser uma porção do lucro, não da banca inteira. Uma boa regra é sugerir sacar entre 25% a 50% do lucro total, ou o suficiente para recuperar a banca inicial se o lucro for grande. O objetivo é "pagar" o investimento inicial e continuar jogando com o lucro.
+**0. Cenário de Saque Recente (Período de "Cooling-Off")**
+*   **Condição:** Se houver qualquer saque nos últimos 7 dias a partir da data atual fornecida.
+*   **Ação:** Aconselhar FORTEMENTE contra um novo saque para manter a disciplina.
+*   **\`shouldWithdraw\`**: \`false\`
+*   **\`reasoning\`**: "Você realizou um saque recentemente. Para manter a disciplina e permitir que sua banca se recomponha e cresça de forma consistente, o ideal é aguardar mais um tempo antes de realizar um novo saque. Vamos focar no crescimento do capital."
+*   **\`confidenceLevel\`**: \`Alto\`
 
-**Formato da Resposta:**
+**1. Cenário: Banca Negativa ou Breakeven**
+*   **Condição:** Se \`totalProfitLoss\` for menor ou igual a zero.
+*   **Ação:** NUNCA recomendar saque.
+*   **\`shouldWithdraw\`**: \`false\`
+*   **\`reasoning\`**: "Sua banca não está lucrativa no momento. Um saque é inviável. O foco total deve ser em uma gestão disciplinada para retornar à lucratividade."
+*   **\`confidenceLevel\`**: \`Alto\`
+
+**2. Cenário: Crescimento Inicial (Reinvestimento é Prioridade)**
+*   **Condição:** Se \`totalProfitLoss\` for positivo, mas representar um crescimento inferior a 25% sobre a \`initialBankroll\` (i.e., \`totalProfitLoss\` < \`initialBankroll\` * 0.25).
+*   **Ação:** Aconselhar FORTEMENTE contra o saque.
+*   **\`shouldWithdraw\`**: \`false\`
+*   **\`reasoning\`**: "Você está lucrativo, parabéns! No entanto, seu crescimento ainda está na fase inicial. Estrategicamente, o mais inteligente agora é reinvestir 100% dos lucros para fortalecer sua base de capital e acelerar o efeito dos juros compostos no futuro."
+*   **\`confidenceLevel\`**: \`Alto\`
+
+**3. Cenário: Marco de Segurança (Recuperar o Investimento)**
+*   **Condição:** Se \`totalProfitLoss\` for maior ou igual à \`initialBankroll\` E o \`totalWithdrawn\` for MENOR que a \`initialBankroll\`.
+*   **Ação:** Recomendar com alta prioridade o saque do valor que falta para completar a retirada do investimento inicial.
+*   **\`shouldWithdraw\`**: \`true\`
+*   **\`suggestedAmount\`**: Calcule (\`initialBankroll\` - \`totalWithdrawn\`). O resultado deve ser positivo.
+*   **\`reasoning\`**: "Excelente! Você atingiu um marco crucial: seu lucro já cobre todo o seu investimento inicial. Recomendo fortemente que você saque R$ [valor calculado] para completar a retirada do seu risco inicial. A partir daí, você estará apostando 100% com o lucro."
+*   **\`confidenceLevel\`**: \`Alto\`
+
+**4. Cenário: Crescimento Sólido (Saque Parcial Inteligente)**
+*   **Condição:** Se nenhuma das condições de alta prioridade (0 a 3) for atendida.
+*   **Ação:** Recomendar um saque parcial e conservador.
+*   **\`shouldWithdraw\`**: \`true\`
+*   **\`suggestedAmount\`**: Calcule 25% do \`totalProfitLoss\`.
+*   **\`reasoning\`**: "Seu crescimento é sólido. É um bom momento para realizar uma parte dos seus ganhos como recompensa pela disciplina. Sugiro um saque de R$ [valor calculado], que representa 25% do seu lucro. O restante continuará investido para manter o ritmo de crescimento da sua banca."
+*   **\`confidenceLevel\`**: \`Médio\`
+
 Responda estritamente em JSON, seguindo o schema fornecido.
 `;
     
     const prompt = `
+Data atual para referência: ${new Date().toISOString().split('T')[0]}
+
 Análise Financeira da Banca:
 ${JSON.stringify({
     initialBankroll: stats.initialBankroll,
     currentBankroll: stats.currentBankroll,
     totalProfitLoss: stats.totalProfitLoss,
-    totalWithdrawn: stats.totalWithdrawn
+    totalWithdrawn: stats.totalWithdrawn,
+    withdrawalsHistory: (withdrawals || [])
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, 5) // Fornece os 5 saques mais recentes
+        .map(w => ({ amount: w.amount, date: new Date(w.date).toISOString().split('T')[0] }))
 }, null, 2)}
 
-Com base nesses dados, forneça sua recomendação de saque.
+Com base nesses dados e no seu protocolo estrito, forneça sua recomendação de saque.
 `;
 
      const response = await ai.models.generateContent({
