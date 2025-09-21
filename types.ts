@@ -28,7 +28,7 @@ export interface BetSelection {
 export interface Bet {
     id: string;
     date: string;
-    market: Market;
+    market: string;
     league: LolLeague | string;
     betStructure: 'Single' | 'Accumulator';
     betType: string;
@@ -63,9 +63,10 @@ export interface Stats {
     roi: number;
     winRate: number;
     averageOdd: number;
-    existingTeams: Record<Market, string[]>;
+    existingTeams: Record<string, string[]>;
     totalWithdrawn: number;
     totalInvested: number;
+    maxDrawdown: number;
 }
 
 export interface BankrollHistoryPoint {
@@ -75,16 +76,26 @@ export interface BankrollHistoryPoint {
     withdrawal?: Withdrawal;
     isNewDay: boolean;
     date: string;
+    timestamp: number;
 }
 
 export interface MarketPerformancePoint {
     name: string;
     profit: number;
+    invested: number;
+    betsCount: number;
+}
+
+export interface DailyProfitPoint {
+    date: string; // YYYY-MM-DD
+    profit: number;
+    count: number;
 }
 
 export interface ChartsData {
     bankrollHistory: BankrollHistoryPoint[];
     performanceByMarket: MarketPerformancePoint[];
+    dailyProfit: DailyProfitPoint[];
 }
 
 export interface AIRecommendation {

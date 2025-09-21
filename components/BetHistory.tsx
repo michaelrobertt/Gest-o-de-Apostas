@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { Bet, BetStatus, Market, LolLeague } from '../types';
 import { PencilIcon, TrashIcon, CheckCircleIcon, XCircleIcon, ClockIcon, SearchIcon } from './icons';
@@ -189,13 +190,13 @@ const BetRow: React.FC<BetRowProps> = ({ bet, onDelete, onUpdateStatus, onEdit }
                     <div className="font-bold text-sm">{getStatusIndicator()}</div>
                     {bet.status !== BetStatus.PENDING && (
                          <div className={`font-semibold ${profitColor}`}>
-                            {bet.profitLoss >= 0 ? '+' : ''}R$ {bet.profitLoss.toFixed(2)}
+                            {bet.profitLoss >= 0 ? '+' : ''}R$ {(bet.profitLoss ?? 0).toFixed(2)}
                         </div>
                     )}
                     <div className="text-brand-text-secondary text-xs">
-                        R$ {bet.value.toFixed(2)} @ {bet.odd.toFixed(2)}
+                        R$ {(bet.value ?? 0).toFixed(2)} @ {(bet.odd ?? 1).toFixed(2)}
                     </div>
-                     <div className="text-xs text-brand-text-secondary">{bet.units.toFixed(2)} U</div>
+                     <div className="text-xs text-brand-text-secondary">{(bet.units ?? 0).toFixed(2)} U</div>
                 </div>
             </div>
             <div className="flex justify-end items-center gap-2 mt-2 pt-2 border-t border-brand-border">

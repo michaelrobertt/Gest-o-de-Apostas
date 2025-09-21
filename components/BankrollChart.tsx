@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label, DotProps } from 'recharts';
 import { BankrollHistoryPoint, BetStatus } from '../types';
 
@@ -11,26 +11,25 @@ const CustomTooltip = ({ active, payload, label }: any) => {
         const dataPoint = payload[0].payload;
         const bet = dataPoint.bet;
         const withdrawal = dataPoint.withdrawal;
+        
         return (
             <div className="bg-brand-bg border border-brand-border p-3 rounded-lg shadow-lg text-sm max-w-xs">
-                <p className="font-bold text-brand-text-primary mb-1">{`Evento #${label}`}</p>
-                <p className="text-brand-text-secondary mb-2">{`Banca: R$ ${dataPoint.value.toFixed(2)}`}</p>
+                <p className="font-bold text-brand-text-primary mb-1">{`Evento #${dataPoint.eventNumber}`}</p>
+                <p className="text-brand-text-secondary text-xs mb-2">{new Date(dataPoint.date).toLocaleString('pt-BR')}</p>
+                <p className="text-brand-text-primary font-semibold mb-2">{`Banca: R$ ${(dataPoint.value ?? 0).toFixed(2)}`}</p>
                 
                 {withdrawal && (
                     <div className="pt-2 border-t border-brand-border space-y-1">
                         <p className="font-semibold text-yellow-400">Saque</p>
-                        <p className="text-xs text-brand-text-secondary">{new Date(withdrawal.date).toLocaleString('pt-BR')}</p>
                         <p className="font-semibold">
                             <span className="text-brand-text-secondary">Valor: </span>
-                            <span className="text-yellow-400">-R$ {withdrawal.amount.toFixed(2)}</span>
+                            <span className="text-yellow-400">-R$ {(withdrawal.amount ?? 0).toFixed(2)}</span>
                         </p>
                     </div>
                 )}
 
                 {bet && (
                     <div className="pt-2 border-t border-brand-border space-y-1">
-                        <p className="text-xs text-brand-text-secondary">{new Date(bet.date).toLocaleString('pt-BR')}</p>
-                        
                         {bet.betStructure === 'Accumulator' && bet.selections ? (
                              <div>
                                  <p className="font-semibold text-brand-text-primary">{bet.betType}</p>
@@ -49,7 +48,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
                         <p className="font-semibold pt-1"><span className="text-brand-text-secondary">Resultado: </span> 
                            <span className={bet.profitLoss > 0 ? 'text-brand-win' : 'text-brand-loss'}>
-                               {bet.status} (R$ {bet.profitLoss.toFixed(2)})
+                               {bet.status} (R$ {(bet.profitLoss ?? 0).toFixed(2)})
                            </span>
                         </p>
                     </div>
@@ -101,10 +100,12 @@ const CustomizedActiveDot: React.FC<DotProps & { payload?: BankrollHistoryPoint 
 
 
 const BankrollChart: React.FC<BankrollChartProps> = ({ data }) => {
+    const newDayTicks = useMemo(() => data.filter(p => p.isNewDay).map(p => p.eventNumber), [data]);
+
     if (data.length <= 1) {
         return (
             <div className="bg-brand-surface p-4 rounded-lg border border-brand-border h-80">
-                <h3 className="text-lg font-semibold mb-4 text-brand-text-primary">Evolução da Banca por Evento</h3>
+                <h3 className="text-lg font-semibold mb-4 text-brand-text-primary">Evolução da Banca</h3>
                 <div className="flex items-center justify-center h-full text-brand-text-secondary">
                     <p>Adicione eventos (apostas, saques) para ver a evolução da banca.</p>
                 </div>
@@ -122,7 +123,7 @@ const BankrollChart: React.FC<BankrollChartProps> = ({ data }) => {
 
     return (
         <div className="bg-brand-surface p-4 rounded-lg border border-brand-border h-80">
-            <h3 className="text-lg font-semibold mb-4 text-brand-text-primary">Evolução da Banca por Evento</h3>
+            <h3 className="text-lg font-semibold mb-4 text-brand-text-primary">Evolução da Banca</h3>
             <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={data} margin={{ top: 5, right: 20, left: 10, bottom: 20 }}>
                     <defs>
@@ -133,12 +134,19 @@ const BankrollChart: React.FC<BankrollChartProps> = ({ data }) => {
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#2c2c2c" />
                     <XAxis 
+                        type="number"
                         dataKey="eventNumber" 
+                        domain={['dataMin', 'dataMax']}
                         stroke="#a0a0a0" 
                         fontSize={12} 
                         tickLine={false} 
                         axisLine={false}
-                        label={{ value: 'Número do Evento', position: 'insideBottom', offset: -15, fill: '#a0a0a0' }}
+                        ticks={newDayTicks}
+                        tickFormatter={(tickValue) => {
+                            const point = data.find(p => p.eventNumber === tickValue);
+                            return point ? new Date(point.date).toLocaleDateString('pt-BR', { month: 'short', day: 'numeric' }) : '';
+                        }}
+                        label={{ value: 'Eventos (agrupados por dia)', position: 'insideBottom', offset: -15, fill: '#a0a0a0' }}
                      />
                     <YAxis 
                         stroke="#a0a0a0" 
@@ -158,20 +166,6 @@ const BankrollChart: React.FC<BankrollChartProps> = ({ data }) => {
                             dy={-10}
                          />
                     </ReferenceLine>
-                    {data.map((point) => 
-                        point.isNewDay && point.eventNumber > 0 ? (
-                            <ReferenceLine key={`day-sep-${point.eventNumber}`} x={point.eventNumber} stroke="#555555" strokeDasharray="2 5">
-                                <Label 
-                                    value={new Date(point.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} 
-                                    position="top" 
-                                    fill="#a0a0a0"
-                                    fontSize={12}
-                                    offset={10}
-                                    style={{ textShadow: '0 0 5px #121212', fontWeight: 'bold' }}
-                                />
-                            </ReferenceLine>
-                        ) : null
-                    )}
                     <Area type="monotone" dataKey="value" stroke="transparent" fill="url(#colorValue)" />
                     <Line 
                         type="monotone" 

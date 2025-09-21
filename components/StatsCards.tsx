@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { toast } from 'react-hot-toast';
 import { Stats } from '../types';
 import Modal from './Modal';
-import { ArrowUpIcon, ArrowDownIcon, PencilIcon, CheckIcon, TrendingUpIcon, ScaleIcon, CalculatorIcon, BanknotesIcon, CircleStackIcon } from './icons';
+import { ArrowUpIcon, ArrowDownIcon, PencilIcon, CheckIcon, TrendingUpIcon, ScaleIcon, CalculatorIcon, BanknotesIcon, CircleStackIcon, TrendingDownIcon } from './icons';
 
 
 interface StatCardProps {
@@ -80,17 +80,16 @@ const StatsCards: React.FC<StatsCardsProps> = ({ stats, onSetInitialBankroll, on
     const profitColor = stats.totalProfitLoss > 0 ? 'text-brand-win' : stats.totalProfitLoss < 0 ? 'text-brand-loss' : 'text-brand-text-primary';
     const profitIcon = stats.totalProfitLoss > 0 ? <ArrowUpIcon className="w-5 h-5 text-brand-win" /> : <ArrowDownIcon className="w-5 h-5 text-brand-loss" />;
 
+    const roiColor = stats.roi > 0 ? 'text-brand-win' : stats.roi < 0 ? 'text-brand-loss' : 'text-brand-text-primary';
+    const roiIcon = stats.roi > 0 
+        ? <TrendingUpIcon className="w-5 h-5 text-brand-win" /> 
+        : stats.roi < 0 
+            ? <TrendingDownIcon className="w-5 h-5 text-brand-loss" />
+            : <TrendingUpIcon className="w-5 h-5 text-brand-text-secondary" />;
+
     return (
         <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatCard
-                    title="Banca Inicial"
-                    value={formatCurrency(stats.initialBankroll)}
-                    description="Clique para editar"
-                    icon={<ScaleIcon className="w-5 h-5 text-brand-text-secondary" />}
-                    onClick={() => setIsBankrollModalOpen(true)}
-                    isEditable
-                />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <StatCard
                     title="Banca Atual"
                     value={formatCurrency(stats.currentBankroll)}
@@ -103,13 +102,6 @@ const StatsCards: React.FC<StatsCardsProps> = ({ stats, onSetInitialBankroll, on
                         </button>
                     }
                 />
-                 <StatCard
-                    title="Total Sacado"
-                    value={formatCurrency(stats.totalWithdrawn)}
-                    description="Lucros realizados"
-                    icon={<BanknotesIcon className="w-5 h-5 text-brand-yellow" />}
-                    colorClass="text-brand-yellow"
-                />
                 <StatCard
                     title="Lucro/Prejuízo Total"
                     value={formatCurrency(stats.totalProfitLoss)}
@@ -118,34 +110,55 @@ const StatsCards: React.FC<StatsCardsProps> = ({ stats, onSetInitialBankroll, on
                     colorClass={profitColor}
                 />
                 <StatCard
-                    title="Total Investido"
-                    value={formatCurrency(stats.totalInvested)}
-                    description="Soma de todos os stakes"
-                    icon={<CircleStackIcon className="w-5 h-5 text-brand-indigo"/>}
-                    colorClass="text-brand-indigo"
-                />
-                 <StatCard
                     title="ROI (Retorno)"
                     value={`${stats.roi.toFixed(2)}%`}
                     description="Sobre o total investido"
-                    icon={<TrendingUpIcon className="w-5 h-5 text-brand-text-secondary"/>}
-                    colorClass={stats.roi > 0 ? 'text-brand-win' : 'text-brand-loss'}
+                    icon={roiIcon}
+                    colorClass={roiColor}
                 />
-                 <StatCard
+                <StatCard
                     title="Taxa de Acerto"
                     value={`${stats.winRate.toFixed(2)}%`}
                     description={`${stats.wonBetsCount} vitórias em ${stats.resolvedBetsCount} apostas`}
-                    icon={<CheckIcon className="w-5 h-5 text-brand-teal"/>}
-                    colorClass="text-brand-teal"
+                    icon={<CheckIcon className="w-5 h-5 text-brand-win"/>}
+                    colorClass="text-brand-win"
                 />
                 <StatCard
+                    title="Drawdown Máximo"
+                    value={`${stats.maxDrawdown.toFixed(2)}%`}
+                    description="Pior queda do pico da banca"
+                    icon={<TrendingDownIcon className="w-5 h-5 text-brand-danger"/>}
+                    colorClass="text-brand-danger"
+                />
+                <StatCard
+                    title="Total Sacado"
+                    value={formatCurrency(stats.totalWithdrawn)}
+                    description="Lucros realizados"
+                    icon={<BanknotesIcon className="w-5 h-5 text-brand-yellow" />}
+                    colorClass="text-brand-yellow"
+                />
+                 <StatCard
+                    title="Banca Inicial"
+                    value={formatCurrency(stats.initialBankroll)}
+                    description="Clique para editar"
+                    icon={<ScaleIcon className="w-5 h-5 text-brand-text-secondary" />}
+                    onClick={() => setIsBankrollModalOpen(true)}
+                    isEditable
+                />
+                 <StatCard
+                    title="Total Investido"
+                    value={formatCurrency(stats.totalInvested)}
+                    description="Soma de todos os stakes"
+                    icon={<CircleStackIcon className="w-5 h-5 text-brand-text-secondary"/>}
+                    colorClass="text-brand-text-primary"
+                />
+                 <StatCard
                     title="Odd Média (Vitórias)"
                     value={`@${stats.averageOdd.toFixed(2)}`}
                     description="Média das apostas ganhas"
-                    icon={<CalculatorIcon className="w-5 h-5 text-brand-violet"/>}
-                    colorClass="text-brand-violet"
+                    icon={<CalculatorIcon className="w-5 h-5 text-brand-text-secondary"/>}
+                    colorClass="text-brand-text-primary"
                 />
-
             </div>
             
             {/* Bankroll Edit Modal */}

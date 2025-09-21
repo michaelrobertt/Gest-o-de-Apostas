@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { toast } from 'react-hot-toast';
 import { Bet, BetSelection, Market, LolLeague } from '../types';
-import { MARKETS, LOL_LEAGUES, BET_TYPES, UNITS, UNIT_PERCENTAGE, HANDICAP_OPTIONS } from '../constants';
+import { LOL_LEAGUES, BET_TYPES, UNITS, UNIT_PERCENTAGE, HANDICAP_OPTIONS } from '../constants';
 import { parseBetsFromImage } from '../services/geminiService';
 import { UploadIcon, SparklesIcon, TrashIcon, XIcon } from './icons';
 
@@ -80,12 +80,13 @@ const TeamInput: React.FC<TeamInputProps> = ({ value, onChange, placeholder, tea
 interface BetFormProps {
     currentBankroll: number;
     addBet: (bet: Omit<Bet, 'id' | 'date' | 'profitLoss' | 'status'>) => void;
-    existingTeams: Record<Market, string[]>;
+    existingTeams: Record<string, string[]>;
     deleteTeamSuggestion: (team: string) => void;
+    availableMarkets: string[];
 }
 
 interface SelectionFormState {
-    market: Market;
+    market: string;
     league: LolLeague | string;
     betType: string;
     details: string;
@@ -97,7 +98,7 @@ interface SingleBetState {
     teamB: string;
     odd: string;
     betType: string;
-    market: Market;
+    market: string;
     league: LolLeague | string;
 }
 
@@ -110,14 +111,21 @@ interface SpecificSelectionState {
     custom?: string;
 }
 
+// FIX: Define a local type for accumulator selections that includes market and league, extending the base BetSelection.
+interface FormAccumulatorSelection extends BetSelection {
+    market: string;
+    league: LolLeague | string;
+}
+
 const initialSelectionState: SelectionFormState = { market: Market.LOL, league: LolLeague.LPL, betType: BET_TYPES[Market.LOL][0], details: '', odd: '' };
 const initialSingleBetState: SingleBetState = { teamA: '', teamB: '', odd: '', betType: BET_TYPES[Market.LOL][0], market: Market.LOL, league: LolLeague.LPL };
 
-const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeams, deleteTeamSuggestion }) => {
+const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeams, deleteTeamSuggestion, availableMarkets }) => {
     const [betStructure, setBetStructure] = useState<'Single' | 'Accumulator'>('Single');
     const [singleBetState, setSingleBetState] = useState<SingleBetState>(initialSingleBetState);
     const [specificSelection, setSpecificSelection] = useState<SpecificSelectionState>({});
-    const [selections, setSelections] = useState<BetSelection[]>([]);
+    // FIX: Update the state to use the new FormAccumulatorSelection type to correctly type selections with market and league.
+    const [selections, setSelections] = useState<FormAccumulatorSelection[]>([]);
     const [currentSelection, setCurrentSelection] = useState<SelectionFormState>(initialSelectionState);
     const [units, setUnits] = useState('1');
     const [value, setValue] = useState('');
@@ -172,10 +180,12 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeam
             case 'Handicap de Mapas':
             case 'Handicap de Rounds':
             case 'Handicap Asiático':
+            case 'Handicap':
                 specific = `Handicap: ${specificSelection.winner} ${specificSelection.line}`; break;
             case 'Total de Mapas (Over/Under)':
             case 'Total de Rounds (Over/Under)':
             case 'Total de Gols (Mais/Menos)':
+            case 'Total (Over/Under)':
                 specific = `Total: ${specificSelection.side} ${specificSelection.line}`; break;
             case '1x2 (Resultado Final)':
                 const winner = specificSelection.result === 'Time A' ? teamA : specificSelection.result === 'Time B' ? teamB : 'Empate';
@@ -219,7 +229,8 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeam
             setSpecificSelection({});
         } else {
             if (selections.length < 2) { toast.error("Uma aposta múltipla precisa de pelo menos 2 seleções."); return; }
-            addBet({ market: Market.SOCCER, league: 'Múltipla', betStructure: 'Accumulator', betType: `Acumulada (${selections.length} seleções)`, details: selections.map(s => s.details).join(' / '), selections, units: finalUnits, value: betValue, odd: totalAccumulatorOdd });
+            // FIX: Accessing `market` on a selection is now type-safe.
+            addBet({ market: selections[0]?.market || 'Múltipla', league: 'Múltipla', betStructure: 'Accumulator', betType: `Acumulada (${selections.length} seleções)`, details: selections.map(s => s.details).join(' / '), selections, units: finalUnits, value: betValue, odd: totalAccumulatorOdd });
             setSelections([]);
         }
         toast.success('Aposta registrada com sucesso!');
@@ -327,6 +338,7 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeam
             case 'Handicap de Mapas':
             case 'Handicap de Rounds':
             case 'Handicap Asiático':
+            case 'Handicap':
                 return (
                     <div className="space-y-2">
                         {renderTeamSelection('winner')}
@@ -339,6 +351,7 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeam
             case 'Total de Mapas (Over/Under)':
             case 'Total de Rounds (Over/Under)':
             case 'Total de Gols (Mais/Menos)':
+            case 'Total (Over/Under)':
                 return (
                      <div className="flex items-center gap-2">
                         <div className="flex gap-2 w-2/3">
@@ -369,8 +382,21 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeam
             <fieldset className="border border-brand-border p-3 rounded-md space-y-4">
                 <legend className="text-sm font-medium text-brand-text-secondary px-2">Evento</legend>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <select value={singleBetState.market} onChange={e => setSingleBetState(p => ({ ...p, market: e.target.value as Market, league: e.target.value === Market.LOL ? LolLeague.LPL : 'N/A', betType: BET_TYPES[e.target.value as Market][0] }))} className="w-full bg-brand-bg border border-brand-border rounded-md p-2">
-                        {MARKETS.map(m => <option key={m} value={m}>{m}</option>)}
+                    <select
+                        value={singleBetState.market}
+                        onChange={e => setSingleBetState(p => {
+                            const newMarket = e.target.value;
+                            const defaultBetTypes = BET_TYPES[newMarket as Market];
+                            return {
+                                ...p,
+                                market: newMarket,
+                                league: newMarket === Market.LOL ? LolLeague.LPL : 'N/A',
+                                betType: defaultBetTypes ? defaultBetTypes[0] : 'Moneyline (ML)'
+                            };
+                        })}
+                        className="w-full bg-brand-bg border border-brand-border rounded-md p-2"
+                    >
+                        {availableMarkets.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
                     {singleBetState.market === Market.LOL && (
                         <select value={singleBetState.league} onChange={e => setSingleBetState(p => ({ ...p, league: e.target.value as LolLeague }))} className="w-full bg-brand-bg border border-brand-border rounded-md p-2">
@@ -389,7 +415,7 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeam
                 <legend className="text-sm font-medium text-brand-text-secondary px-2">Aposta</legend>
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                      <select value={singleBetState.betType} onChange={e => setSingleBetState(p => ({ ...p, betType: e.target.value }))} className="w-full bg-brand-bg border border-brand-border rounded-md p-2">
-                        {BET_TYPES[singleBetState.market].map(bt => <option key={bt} value={bt}>{bt}</option>)}
+                        {(BET_TYPES[singleBetState.market as Market] || ['Moneyline (ML)', 'Handicap', 'Total (Over/Under)', 'Outro']).map(bt => <option key={bt} value={bt}>{bt}</option>)}
                     </select>
                     <input type="number" step="0.01" value={singleBetState.odd} onChange={e => setSingleBetState(p => ({ ...p, odd: e.target.value }))} className="w-full bg-brand-bg border border-brand-border rounded-md p-2" placeholder="Odd. Ex: 1.85" />
                 </div>
@@ -402,12 +428,21 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeam
         <div className="space-y-4">
             <div className="bg-brand-bg p-4 rounded-lg border border-brand-border space-y-3">
                 <h4 className="font-semibold text-brand-text-primary">Adicionar Nova Seleção</h4>
+                <div className="grid grid-cols-2 gap-2">
+                 <select
+                        value={currentSelection.market}
+                        onChange={e => setCurrentSelection(p => ({...p, market: e.target.value }))}
+                        className="w-full bg-brand-surface border border-brand-border rounded-md p-2"
+                    >
+                        {availableMarkets.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                    <input type="text" value={currentSelection.betType} onChange={e => setCurrentSelection(p => ({...p, betType: e.target.value}))} placeholder="Tipo (Ex: Moneyline Time A)" className="w-full bg-brand-surface border border-brand-border rounded-md p-2" />
+                </div>
                 <input type="text" value={currentSelection.details} onChange={e => setCurrentSelection(p => ({...p, details: e.target.value}))} placeholder="Detalhes (Ex: Time A vs Time B)" className="w-full bg-brand-surface border border-brand-border rounded-md p-2" />
                 <div className="grid grid-cols-2 gap-2">
-                    <input type="text" value={currentSelection.betType} onChange={e => setCurrentSelection(p => ({...p, betType: e.target.value}))} placeholder="Tipo (Ex: Moneyline Time A)" className="w-full bg-brand-surface border border-brand-border rounded-md p-2" />
                     <input type="number" step="0.01" value={currentSelection.odd} onChange={e => setCurrentSelection(p => ({...p, odd: e.target.value}))} placeholder="Odd" className="w-full bg-brand-surface border border-brand-border rounded-md p-2" />
+                     <button type="button" onClick={handleAddSelection} className="w-full bg-brand-border text-brand-text-primary font-semibold py-2 rounded-md hover:bg-gray-700 transition-colors">Adicionar Seleção</button>
                 </div>
-                <button type="button" onClick={handleAddSelection} className="w-full bg-brand-border text-brand-text-primary font-semibold py-2 rounded-md hover:bg-gray-700 transition-colors">Adicionar Seleção</button>
             </div>
             {selections.length > 0 && (
                 <div className="space-y-2">
@@ -417,7 +452,8 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeam
                             <li key={index} className="flex justify-between items-center bg-brand-bg p-2 rounded-md text-sm">
                                 <div>
                                     <p className="font-medium text-brand-text-primary">{sel.details}</p>
-                                    <p className="text-brand-text-secondary">{sel.betType}</p>
+                                    {/* FIX: Accessing `market` on a selection is now type-safe. */}
+                                    <p className="text-brand-text-secondary">{sel.market} - {sel.betType}</p>
                                 </div>
                                 <div className="flex items-center gap-3">
                                    <span className="font-bold text-brand-primary">@{sel.odd.toFixed(2)}</span>

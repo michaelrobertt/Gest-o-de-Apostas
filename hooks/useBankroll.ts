@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-// FIX: Import BankrollHistoryPoint to explicitly type the bankrollHistory constant.
-import { Bet, BankrollData, BetStatus, Stats, ChartsData, Market, LolLeague, Withdrawal, BankrollHistoryPoint, MarketPerformancePoint } from '../types';
+import { Bet, BankrollData, BetStatus, Stats, ChartsData, Market, LolLeague, Withdrawal, BankrollHistoryPoint, MarketPerformancePoint, DailyProfitPoint, BetSelection } from '../types';
 
 const LOCAL_STORAGE_KEY = 'betting-tracker-data';
 
@@ -11,14 +10,120 @@ const defaultState: BankrollData = {
     withdrawals: [],
 };
 
-export const useBankroll = () => {
+// Helper to get local date in YYYY-MM-DD format
+const getLocalYYYYMMDD = (dateString: string): string => {
+    const date = new Date(dateString);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+
+const validateSelection = (sel: any): BetSelection | null => {
+    if (typeof sel !== 'object' || sel === null) return null;
+    const selectionOdd = Number(sel.odd ?? 1);
+    return {
+        details: String(sel.details ?? 'N/A'),
+        betType: String(sel.betType ?? 'N/A'),
+        odd: Number.isFinite(selectionOdd) && selectionOdd >= 1 ? selectionOdd : 1,
+    };
+};
+
+const validateBetData = (b: any): Bet | null => {
+    if (typeof b !== 'object' || b === null) {
+        return null;
+    }
+
+    let status: BetStatus;
+    switch (b.status) {
+        case 'Vitória':
+        case BetStatus.WON: status = BetStatus.WON; break;
+        case 'Derrota':
+        case BetStatus.LOST: status = BetStatus.LOST; break;
+        case 'Pendente':
+        case BetStatus.PENDING:
+        default: status = BetStatus.PENDING; break;
+    }
+
+    const value = Number(b.value ?? b.stake ?? 0);
+    const units = Number(b.units ?? 0);
+    const odd = Number(b.odd ?? 1);
+
+    const safeValue = Number.isFinite(value) && value >= 0 ? value : 0;
+    const safeUnits = Number.isFinite(units) && units >= 0 ? units : 0;
+    const safeOdd = Number.isFinite(odd) && odd >= 1 ? odd : 1;
+    
+    let profitLoss: number;
+
+    // Status is the source of truth for profit/loss. This ensures correctness when
+    // updating a bet from Pending to Won/Lost, and also cleans up imported data.
+    if (status === BetStatus.WON) {
+        profitLoss = safeValue * (safeOdd - 1);
+    } else if (status === BetStatus.LOST) {
+        profitLoss = -safeValue;
+    } else { // PENDING
+        profitLoss = 0;
+    }
+    
+    const rawLeague = String(b.league || b.context || 'N/A');
+
+    return {
+        id: String(b.id || `${new Date().toISOString()}-${Math.random()}`),
+        date: String(b.date || new Date().toISOString()),
+        market: String(b.market || Market.SOCCER),
+        league: (rawLeague === 'null' || rawLeague === 'undefined') ? 'N/A' : rawLeague,
+        betStructure: b.betStructure === 'Accumulator' ? 'Accumulator' : 'Single',
+        betType: String(b.betType || 'N/A'),
+        details: String(b.details || b.betDetail || ''),
+        selections: Array.isArray(b.selections) 
+            ? b.selections.map(validateSelection).filter((s): s is BetSelection => s !== null) 
+            : undefined,
+        units: safeUnits,
+        value: safeValue,
+        odd: safeOdd,
+        status: status,
+        profitLoss: parseFloat(profitLoss.toFixed(2)),
+    };
+};
+
+const validateWithdrawal = (w: any): Withdrawal | null => {
+    if (typeof w !== 'object' || w === null) {
+        return null;
+    }
+    const amount = Number(w.amount);
+    if (!Number.isFinite(amount) || amount < 0) {
+        return null;
+    }
+    return {
+        id: String(w.id || `${new Date().toISOString()}-${Math.random()}`),
+        date: String(w.date || new Date().toISOString()),
+        amount: amount,
+    };
+};
+
+export const useBankroll = (filterYear: number) => {
     const [state, setState] = useState<BankrollData>(() => {
         try {
             const storedData = localStorage.getItem(LOCAL_STORAGE_KEY);
             if (storedData) {
                 const parsed = JSON.parse(storedData);
-                // Ensure optional fields exist for backwards compatibility
-                return { ...defaultState, ...parsed, blacklistedTeams: parsed.blacklistedTeams || [], withdrawals: parsed.withdrawals || [] };
+                
+                const validatedBets = Array.isArray(parsed.bets) 
+                    ? parsed.bets.map(validateBetData).filter((b): b is Bet => b !== null) 
+                    : [];
+                
+                const validatedWithdrawals = Array.isArray(parsed.withdrawals)
+                    ? parsed.withdrawals.map(validateWithdrawal).filter((w): w is Withdrawal => w !== null)
+                    : [];
+
+                return { 
+                    ...defaultState, 
+                    ...parsed,
+                    bets: validatedBets, 
+                    blacklistedTeams: Array.isArray(parsed.blacklistedTeams) ? parsed.blacklistedTeams : [], 
+                    withdrawals: validatedWithdrawals,
+                };
             }
             return defaultState;
         } catch (error) {
@@ -37,14 +142,21 @@ export const useBankroll = () => {
     
     const addBet = useCallback((newBet: Omit<Bet, 'id' | 'date' | 'profitLoss' | 'status'>) => {
         setState(prevState => {
-            const bet: Bet = {
+             const betToValidate: Bet = {
                 ...newBet,
                 id: new Date().toISOString() + Math.random(),
                 date: new Date().toISOString(),
                 status: BetStatus.PENDING,
                 profitLoss: 0,
             };
-            const sortedBets = [...prevState.bets, bet].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            const validatedBet = validateBetData(betToValidate);
+
+            if(!validatedBet) {
+                console.error("Failed to add invalid bet", betToValidate);
+                return prevState;
+            }
+            
+            const sortedBets = [...prevState.bets, validatedBet].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
             return { ...prevState, bets: sortedBets };
         });
     }, []);
@@ -68,23 +180,14 @@ export const useBankroll = () => {
         }));
     }, []);
 
-    const updateBet = useCallback((betId: string, updatedBet: Bet) => {
+    const updateBet = useCallback((betId: string, updatedBetData: Bet) => {
         setState(prevState => {
-            const newBets = prevState.bets.map(bet => {
-                if (bet.id === betId) {
-                    let profitLoss = 0;
-                    const value = Number(updatedBet.value);
-                    const odd = Number(updatedBet.odd);
-
-                    if (updatedBet.status === BetStatus.WON) {
-                        profitLoss = value * (odd - 1);
-                    } else if (updatedBet.status === BetStatus.LOST) {
-                        profitLoss = -value;
-                    }
-                    return { ...updatedBet, profitLoss: parseFloat(profitLoss.toFixed(2)), value, odd, units: Number(updatedBet.units) };
-                }
-                return bet;
-            });
+            const validatedBet = validateBetData(updatedBetData);
+            if (!validatedBet) {
+                console.error("Failed to update with invalid bet data", updatedBetData);
+                return prevState;
+            }
+            const newBets = prevState.bets.map(bet => (bet.id === betId ? validatedBet : bet));
             const sortedBets = newBets.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
             return { ...prevState, bets: sortedBets };
         });
@@ -95,8 +198,9 @@ export const useBankroll = () => {
             ...prevState,
             bets: prevState.bets.map(bet => {
                 if (bet.id === betId) {
-                    const profitLoss = newStatus === BetStatus.WON ? bet.value * (bet.odd - 1) : -bet.value;
-                    return { ...bet, status: newStatus, profitLoss: parseFloat(profitLoss.toFixed(2)) };
+                    const updatedBetWithStatus = {...bet, status: newStatus};
+                    const validatedBet = validateBetData(updatedBetWithStatus);
+                    return validatedBet || bet; // Fallback to original bet if validation fails
                 }
                 return bet;
             }),
@@ -125,70 +229,25 @@ export const useBankroll = () => {
                     }
                     const data = JSON.parse(text) as any;
 
-                    if (!data.bets || typeof data.initialBankroll === 'undefined') {
-                        throw new Error("Arquivo JSON inválido ou mal formatado.");
+                    if (!data || typeof data.initialBankroll === 'undefined') {
+                        throw new Error("Arquivo JSON inválido. A estrutura esperada é { initialBankroll: number, ... }.");
                     }
 
-                    const validatedBets = (data.bets as any[]).map((b): Bet => {
-                        // Handle legacy or different status formats
-                        let status: BetStatus;
-                        switch (b.status) {
-                            case 'Vitória':
-                            case BetStatus.WON:
-                                status = BetStatus.WON;
-                                break;
-                            case 'Derrota':
-                            case BetStatus.LOST:
-                                status = BetStatus.LOST;
-                                break;
-                            case 'Pendente':
-                            case BetStatus.PENDING:
-                                status = BetStatus.PENDING;
-                                break;
-                            default:
-                                status = BetStatus.PENDING;
-                        }
-                        
-                        // Handle legacy field names for value (stake) and profitLoss (profit)
-                        const value = b.value ?? b.stake ?? 0;
-                        const odd = b.odd ?? 1;
-                        let profitLoss = b.profitLoss ?? b.profit;
+                    const validatedBets = Array.isArray(data.bets)
+                        ? data.bets.map(validateBetData).filter((bet): bet is Bet => bet !== null)
+                        : [];
 
-                        // Recalculate profit/loss if it's missing, ensuring data integrity
-                        if (profitLoss === undefined && status !== BetStatus.PENDING) {
-                            if (status === BetStatus.WON) {
-                                profitLoss = value * (odd - 1);
-                            } else if (status === BetStatus.LOST) {
-                                profitLoss = -value;
-                            }
-                        }
-
-                        const validatedBet: Bet = {
-                            id: b.id || new Date().toISOString() + Math.random(),
-                            date: b.date || new Date().toISOString(),
-                            market: b.market || Market.LOL,
-                            league: b.league || b.context || 'N/A',
-                            betStructure: b.betStructure || 'Single',
-                            betType: b.betType || 'N/A',
-                            details: b.details || b.betDetail || '',
-                            selections: b.selections || undefined,
-                            units: b.units || 0,
-                            value: value,
-                            odd: odd,
-                            status: status,
-                            profitLoss: profitLoss !== undefined ? parseFloat(Number(profitLoss).toFixed(2)) : 0,
-                        };
-
-                        return validatedBet;
-                    });
+                    const validatedWithdrawals = Array.isArray(data.withdrawals)
+                        ? data.withdrawals.map(validateWithdrawal).filter((w): w is Withdrawal => w !== null)
+                        : [];
                     
                     const sortedBets = validatedBets.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
                     setState({ 
-                        initialBankroll: data.initialBankroll, 
+                        initialBankroll: Number(data.initialBankroll) || 0, 
                         bets: sortedBets,
-                        blacklistedTeams: data.blacklistedTeams || [],
-                        withdrawals: data.withdrawals || [],
+                        blacklistedTeams: Array.isArray(data.blacklistedTeams) ? data.blacklistedTeams : [],
+                        withdrawals: validatedWithdrawals,
                     });
                     resolve("Dados importados com sucesso!");
                 } catch (error) {
@@ -224,62 +283,15 @@ export const useBankroll = () => {
             }
         });
     }, []);
+    
+    const availableMarkets = useMemo(() => {
+        const marketsFromBets = new Set(state.bets.map(b => b.market));
+        const defaultMarkets = Object.values(Market);
+        // Ensure default markets are present even if no bets exist for them
+        return Array.from(new Set([...defaultMarkets, ...marketsFromBets]));
+    }, [state.bets]);
 
-    const stats = useMemo<Stats>(() => {
-        const resolvedBets = state.bets.filter(b => b.status !== BetStatus.PENDING);
-        const wonBets = resolvedBets.filter(b => b.status === BetStatus.WON);
-        
-        const totalProfitLoss = resolvedBets.reduce((acc, b) => acc + b.profitLoss, 0);
-        const totalWithdrawn = (state.withdrawals || []).reduce((acc, w) => acc + w.amount, 0);
-        const currentBankroll = state.initialBankroll + totalProfitLoss - totalWithdrawn;
-        const totalInvested = resolvedBets.reduce((acc, b) => acc + b.value, 0);
-        
-        const roi = totalInvested > 0 ? (totalProfitLoss / totalInvested) * 100 : 0;
-        const winRate = resolvedBets.length > 0 ? (wonBets.length / resolvedBets.length) * 100 : 0;
-        const averageOdd = wonBets.length > 0 ? wonBets.reduce((acc, b) => acc + b.odd, 0) / wonBets.length : 0;
-        
-        const teamRegex = /(.+?)\s*(?:vs|x)\s*(.+)/i;
-        const cleanHandicap = (teamName: string) => teamName.replace(/\s*[-+]\d+(\.\d+)?$/, '').trim().split('|')[0].trim();
-        
-        const teamsByMarket: Record<Market, Set<string>> = {
-            [Market.LOL]: new Set(),
-            [Market.CS2]: new Set(),
-            [Market.SOCCER]: new Set()
-        };
-
-        state.bets.forEach(bet => {
-            if (!bet.details) return;
-            const match = bet.details.match(teamRegex);
-            const teams = match ? [cleanHandicap(match[1]), cleanHandicap(match[2])] : [bet.details.trim()];
-            teams.forEach(team => {
-                if (team && !state.blacklistedTeams?.includes(team)) {
-                    teamsByMarket[bet.market].add(team);
-                }
-            });
-        });
-
-        const existingTeams: Record<Market, string[]> = {
-            [Market.LOL]: Array.from(teamsByMarket[Market.LOL]).sort(),
-            [Market.CS2]: Array.from(teamsByMarket[Market.CS2]).sort(),
-            [Market.SOCCER]: Array.from(teamsByMarket[Market.SOCCER]).sort(),
-        };
-
-        return {
-            initialBankroll: state.initialBankroll,
-            currentBankroll,
-            totalProfitLoss,
-            resolvedBetsCount: resolvedBets.length,
-            wonBetsCount: wonBets.length,
-            roi,
-            winRate,
-            averageOdd,
-            existingTeams,
-            totalWithdrawn,
-            totalInvested,
-        };
-    }, [state.bets, state.initialBankroll, state.blacklistedTeams, state.withdrawals]);
-
-    const chartsData = useMemo<ChartsData>(() => {
+    const bankrollHistory = useMemo<BankrollHistoryPoint[]>(() => {
         const resolvedBets = state.bets.filter(b => b.status !== BetStatus.PENDING);
         const withdrawals = state.withdrawals || [];
 
@@ -297,15 +309,16 @@ export const useBankroll = () => {
         let lastDate: string | null = null;
 
         const firstEventDate = events.length > 0 ? events[0].data.date : new Date().toISOString();
-        const bankrollHistory: BankrollHistoryPoint[] = [{
+        const history: BankrollHistoryPoint[] = [{
             eventNumber: 0,
             value: state.initialBankroll,
             isNewDay: true,
-            date: firstEventDate
+            date: firstEventDate,
+            timestamp: new Date(firstEventDate).getTime(),
         }];
 
         events.forEach((event, index) => {
-            const currentDate = event.data.date.split('T')[0];
+            const currentDate = getLocalYYYYMMDD(event.data.date);
             const isNewDay = currentDate !== lastDate;
             lastDate = currentDate;
     
@@ -325,67 +338,149 @@ export const useBankroll = () => {
                 };
             }
     
-            bankrollHistory.push({
+            history.push({
                 ...point,
                 eventNumber: index + 1,
                 isNewDay: isNewDay,
                 date: event.data.date,
+                timestamp: new Date(event.data.date).getTime(),
             } as BankrollHistoryPoint);
         });
+        return history;
 
-        const performanceMap: { [key: string]: number } = {};
-        state.bets
-            .filter(b => b.status !== BetStatus.PENDING)
-            .forEach(bet => {
+    }, [state.bets, state.initialBankroll, state.withdrawals]);
+
+    const stats = useMemo<Stats>(() => {
+        const resolvedBets = state.bets.filter(b => b.status !== BetStatus.PENDING);
+        const wonBets = resolvedBets.filter(b => b.status === BetStatus.WON);
+        
+        const totalProfitLoss = resolvedBets.reduce((acc, b) => acc + b.profitLoss, 0);
+        const totalWithdrawn = (state.withdrawals || []).reduce((acc, w) => acc + w.amount, 0);
+        const totalInvested = resolvedBets.reduce((acc, b) => acc + b.value, 0);
+        const currentBankroll = state.initialBankroll + totalProfitLoss - totalWithdrawn;
+        
+        const roi = totalInvested > 0 ? (totalProfitLoss / totalInvested) * 100 : 0;
+        const winRate = resolvedBets.length > 0 ? (wonBets.length / resolvedBets.length) * 100 : 0;
+        const averageOdd = wonBets.length > 0 ? wonBets.reduce((acc, b) => acc + b.odd, 0) / wonBets.length : 0;
+        
+        const teamRegex = /(.+?)\s*(?:vs|x)\s*(.+)/i;
+        const cleanHandicap = (teamName: string) => teamName.replace(/\s*[-+]\d+(\.\d+)?$/, '').trim().split('|')[0].trim();
+        
+        const teamsByMarket: Record<string, Set<string>> = {};
+
+        state.bets.forEach(bet => {
+            if (!bet.details) return;
+
+            if (!teamsByMarket[bet.market]) {
+                teamsByMarket[bet.market] = new Set();
+            }
+
+            const match = bet.details.match(teamRegex);
+            const teams = match ? [cleanHandicap(match[1]), cleanHandicap(match[2])] : [bet.details.trim()];
+            teams.forEach(team => {
+                if (team && !state.blacklistedTeams?.includes(team)) {
+                    teamsByMarket[bet.market].add(team);
+                }
+            });
+        });
+
+        const existingTeams: Record<string, string[]> = {};
+        for (const market in teamsByMarket) {
+            existingTeams[market] = Array.from(teamsByMarket[market]).sort();
+        }
+
+        let peak = -Infinity;
+        let maxDrawdownValue = 0;
+        bankrollHistory.forEach(point => {
+            if (point.value > peak) {
+                peak = point.value;
+            }
+            const drawdown = peak > 0 ? (peak - point.value) / peak : 0;
+            if (drawdown > maxDrawdownValue) {
+                maxDrawdownValue = drawdown;
+            }
+        });
+
+        return {
+            initialBankroll: state.initialBankroll,
+            currentBankroll: parseFloat(currentBankroll.toFixed(2)),
+            totalProfitLoss: parseFloat(totalProfitLoss.toFixed(2)),
+            resolvedBetsCount: resolvedBets.length,
+            wonBetsCount: wonBets.length,
+            roi,
+            winRate,
+            averageOdd,
+            existingTeams,
+            totalWithdrawn: parseFloat(totalWithdrawn.toFixed(2)),
+            totalInvested: parseFloat(totalInvested.toFixed(2)),
+            maxDrawdown: maxDrawdownValue * 100,
+        };
+    }, [state.bets, state.initialBankroll, state.blacklistedTeams, state.withdrawals, bankrollHistory]);
+
+    const chartsData = useMemo<ChartsData>(() => {
+        const resolvedBets = state.bets.filter(b => b.status !== BetStatus.PENDING);
+
+        // --- Performance by Market Calculation (Filtered) ---
+        const performanceBets = resolvedBets.filter(bet => {
+            const betDate = new Date(bet.date);
+            const year = betDate.getFullYear();
+            const month = betDate.getMonth(); // 0 = Jan, 8 = Sep
+            return year === filterYear && month >= 0 && month <= 8;
+        });
+
+        const performanceMap: { [key: string]: { profit: number, invested: number, betsCount: number } } = {};
+        performanceBets.forEach(bet => {
+                const updateMarket = (name: string) => {
+                    if (!performanceMap[name]) {
+                        performanceMap[name] = { profit: 0, invested: 0, betsCount: 0 };
+                    }
+                    performanceMap[name].profit += bet.profitLoss;
+                    performanceMap[name].invested += bet.value;
+                    performanceMap[name].betsCount += 1;
+                };
+
                 const marketName = bet.market === Market.LOL ? 'League of Legends' : bet.market;
-                performanceMap[marketName] = (performanceMap[marketName] || 0) + bet.profitLoss;
+                updateMarket(marketName);
 
                 if (bet.market === Market.LOL && bet.league && bet.league.trim() && bet.league !== 'N/A') {
                     if (Object.values(LolLeague).includes(bet.league as LolLeague)) {
-                        performanceMap[bet.league] = (performanceMap[bet.league] || 0) + bet.profitLoss;
+                        updateMarket(bet.league);
                     }
                 }
             });
         
-        const allPerformanceItems = Object.entries(performanceMap)
-            .map(([name, profit]) => ({ name, profit }))
-            .filter(item => Math.abs(item.profit) > 0.01 && item.name);
+        const performanceByMarket: MarketPerformancePoint[] = Object.entries(performanceMap)
+            .map(([name, data]) => ({ 
+                name, 
+                profit: parseFloat(data.profit.toFixed(2)),
+                invested: parseFloat(data.invested.toFixed(2)),
+                betsCount: data.betsCount 
+            }))
+            .filter(item => item.invested > 0.01 && item.name)
+            .sort((a,b) => b.profit - a.profit);
 
-        const lolLeagueNames = Object.values(LolLeague);
-        const lolItemNames = [Market.LOL, ...lolLeagueNames];
 
-        const lolItems = allPerformanceItems.filter(item => lolItemNames.includes(item.name as any));
-        const otherItems = allPerformanceItems.filter(item => !lolItemNames.includes(item.name as any));
-
-        lolItems.sort((a, b) => {
-            if (a.name === Market.LOL) return -1;
-            if (b.name === Market.LOL) return 1;
-            return b.profit - a.profit;
+        // --- Daily Profit Calculation (Filtered by year) ---
+        const dailyProfitMap: { [key: string]: { profit: number; count: number } } = {};
+        const calendarBets = resolvedBets.filter(bet => new Date(bet.date).getFullYear() === filterYear);
+        
+        calendarBets.forEach(bet => {
+            const date = getLocalYYYYMMDD(bet.date);
+            if (!dailyProfitMap[date]) {
+                dailyProfitMap[date] = { profit: 0, count: 0 };
+            }
+            dailyProfitMap[date].profit += bet.profitLoss;
+            dailyProfitMap[date].count += 1;
         });
 
-        const lolGroupSortKey = lolItems.find(item => item.name === Market.LOL)?.profit ?? -Infinity;
+        const dailyProfit: DailyProfitPoint[] = Object.entries(dailyProfitMap).map(([date, data]) => ({
+            date,
+            ...data
+        })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-        otherItems.sort((a, b) => b.profit - a.profit);
 
-        let performanceByMarket: MarketPerformancePoint[] = [];
-        if (lolItems.length > 0) {
-            let lolGroupInserted = false;
-            for (const otherItem of otherItems) {
-                if (otherItem.profit <= lolGroupSortKey && !lolGroupInserted) {
-                    performanceByMarket.push(...lolItems);
-                    lolGroupInserted = true;
-                }
-                performanceByMarket.push(otherItem);
-            }
-            if (!lolGroupInserted) {
-                performanceByMarket.push(...lolItems);
-            }
-        } else {
-            performanceByMarket = otherItems;
-        }
-
-        return { bankrollHistory, performanceByMarket };
-    }, [state.bets, state.initialBankroll, state.withdrawals]);
+        return { bankrollHistory, performanceByMarket, dailyProfit };
+    }, [state.bets, bankrollHistory, filterYear]);
 
     return {
         state,
@@ -400,6 +495,7 @@ export const useBankroll = () => {
         deleteTeamSuggestion,
         addWithdrawal,
         stats,
-        chartsData
+        chartsData,
+        availableMarkets,
     };
 };

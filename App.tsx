@@ -1,15 +1,18 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { useBankroll } from './hooks/useBankroll';
 import Header from './components/Header';
 import StatsCards from './components/StatsCards';
 import BankrollChart from './components/BankrollChart';
 import PerformanceChart from './components/PerformanceChart';
+import ProfitCalendar from './components/ProfitCalendar';
 import BetForm from './components/BetForm';
 import AIAssistant from './components/AIAssistant';
 import BetHistory from './components/BetHistory';
 import { Toaster, toast } from 'react-hot-toast';
 
 const App: React.FC = () => {
+    const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+    
     const {
         state,
         addBet,
@@ -24,7 +27,16 @@ const App: React.FC = () => {
         addWithdrawal,
         stats,
         chartsData,
-    } = useBankroll();
+        availableMarkets,
+    } = useBankroll(selectedYear);
+
+    const availableYears = useMemo(() => {
+        const years = new Set(state.bets.map(bet => new Date(bet.date).getFullYear()));
+        if (years.size === 0) {
+            return [new Date().getFullYear()];
+        }
+        return Array.from(years).sort((a, b) => b - a); // Descending order
+    }, [state.bets]);
 
     const handleDataAction = (action: () => Promise<string | void>) => {
         toast.promise(
@@ -59,36 +71,59 @@ const App: React.FC = () => {
                     <h1 className="text-2xl font-bold text-brand-text-primary">Visão Geral da Banca</h1>
                     <StatsCards stats={stats} onSetInitialBankroll={setInitialBankroll} onAddWithdrawal={addWithdrawal} />
                 </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    <BankrollChart data={chartsData.bankrollHistory} />
-                    <PerformanceChart data={chartsData.performanceByMarket} />
-                </div>
-
+                
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+                    {/* Main content area for charts and history */}
                     <div className="lg:col-span-2 space-y-8">
-                        <BetForm
+                        <div>
+                            <h2 className="text-xl font-bold text-brand-text-primary mb-4">Análise de Performance</h2>
+                            <div className="space-y-8">
+                                <BankrollChart data={chartsData.bankrollHistory} />
+                                <PerformanceChart
+                                    data={chartsData.performanceByMarket}
+                                    availableYears={availableYears}
+                                    selectedYear={selectedYear}
+                                    onYearChange={setSelectedYear}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            <h2 className="text-xl font-bold text-brand-text-primary">Atividade Diária de Apostas</h2>
+                            <ProfitCalendar
+                                data={chartsData.dailyProfit}
+                                availableYears={availableYears}
+                                selectedYear={selectedYear}
+                                onYearChange={setSelectedYear}
+                            />
+                        </div>
+                        
+                        <BetHistory
+                            bets={state.bets}
+                            onDelete={deleteBet}
+                            onUpdateStatus={updateBetStatus}
+                            onUpdateBet={updateBet}
+                        />
+                    </div>
+
+                    {/* Sticky sidebar for actions */}
+                    <div className="lg:col-span-1 space-y-8 lg:sticky top-8">
+                        <AIAssistant
+                            bets={state.bets}
+                            withdrawals={state.withdrawals || []}
+                            stats={stats}
+                            performanceByMarket={chartsData.performanceByMarket}
+                            onAddWithdrawal={addWithdrawal}
+                        />
+                         <BetForm
                             currentBankroll={stats.currentBankroll}
                             addBet={addBet}
                             existingTeams={stats.existingTeams}
                             deleteTeamSuggestion={deleteTeamSuggestion}
+                            availableMarkets={availableMarkets}
                         />
                     </div>
-                    <AIAssistant
-                        bets={state.bets}
-                        withdrawals={state.withdrawals || []}
-                        stats={stats}
-                        performanceByMarket={chartsData.performanceByMarket}
-                        onAddWithdrawal={addWithdrawal}
-                    />
                 </div>
-                
-                <BetHistory
-                    bets={state.bets}
-                    onDelete={deleteBet}
-                    onUpdateStatus={updateBetStatus}
-                    onUpdateBet={updateBet}
-                />
             </main>
         </div>
     );

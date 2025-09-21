@@ -7,6 +7,15 @@ if (!process.env.API_KEY) {
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
 
+// Helper to get local date in YYYY-MM-DD format
+const getLocalYYYYMMDD = (dateString: string): string => {
+    const date = new Date(dateString);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
 const fileToGenerativePart = async (file: File) => {
   const base64EncodedDataPromise = new Promise<string>((resolve) => {
     const reader = new FileReader();
@@ -47,6 +56,10 @@ Sua principal tarefa é DIFERENCIAR entre um boletim com múltiplas apostas INDI
         *   \`betStructure\`: "Single"
         *   Preencha os outros campos (\`market\`, \`league\`, \`details\`, \`betType\`, \`value\`, \`odd\`) para cada aposta.
 
+3.  **Mercados e Tipos de Aposta Desconhecidos:**
+    *   Se você encontrar um mercado (esporte/jogo) que não seja um dos padrões ('League of Legends', 'Counter-Strike 2', 'Futebol'), retorne o nome exato que você identificar (ex: "Valorant", "NFL", "Basquete").
+    *   O mesmo se aplica a tipos de aposta. Se um tipo de aposta não for padrão, extraia o texto exato que descreve a aposta. Sua prioridade é a precisão dos dados extraídos.
+
 **Sempre retorne um array de objetos, mesmo que encontre apenas uma aposta.**
 `;
 
@@ -65,7 +78,7 @@ Sua principal tarefa é DIFERENCIAR entre um boletim com múltiplas apostas INDI
                 items: {
                     type: Type.OBJECT,
                     properties: {
-                        market: { type: Type.STRING, enum: Object.values(Market) },
+                        market: { type: Type.STRING },
                         league: { type: Type.STRING },
                         betStructure: { type: Type.STRING, enum: ['Single', 'Accumulator'] },
                         betType: { type: Type.STRING },
@@ -292,7 +305,7 @@ Responda estritamente em JSON, seguindo o schema fornecido.
 `;
     
     const prompt = `
-Data atual para referência: ${new Date().toISOString().split('T')[0]}
+Data atual para referência: ${getLocalYYYYMMDD(new Date().toISOString())}
 
 Análise Financeira da Banca:
 ${JSON.stringify({
@@ -303,7 +316,7 @@ ${JSON.stringify({
     withdrawalsHistory: (withdrawals || [])
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
         .slice(0, 5) // Fornece os 5 saques mais recentes
-        .map(w => ({ amount: w.amount, date: new Date(w.date).toISOString().split('T')[0] }))
+        .map(w => ({ amount: w.amount, date: getLocalYYYYMMDD(w.date) }))
 }, null, 2)}
 
 Com base nesses dados e no seu protocolo estrito, forneça sua recomendação de saque.

@@ -148,7 +148,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ bets, withdrawals, stats, per
     };
 
     return (
-        <div className="bg-brand-surface rounded-lg border border-brand-border sticky top-8 flex flex-col">
+        <div className="bg-brand-surface rounded-lg border border-brand-border flex flex-col">
             <h3 className="text-lg font-semibold p-4 border-b border-brand-border flex items-center gap-2">
                 <SparklesIcon className="w-5 h-5 text-brand-primary" />
                 Assistente de Banca IA
