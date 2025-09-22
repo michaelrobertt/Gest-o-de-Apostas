@@ -89,6 +89,7 @@ export interface MarketPerformancePoint {
 export interface DailyProfitPoint {
     date: string; // YYYY-MM-DD
     profit: number;
+    profitUnits: number;
     count: number;
 }
 

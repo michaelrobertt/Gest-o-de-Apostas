@@ -36,31 +36,47 @@ export const parseBetsFromImage = async (imageFile: File): Promise<Partial<Bet>[
 
     // FIX: Escaped backticks inside the template literal to prevent them from being parsed as variables.
     const promptText = `
-Analise esta imagem de um boletim de aposta e extraia as informações de CADA aposta.
-Sua principal tarefa é DIFERENCIAR entre um boletim com múltiplas apostas INDIVIDUAIS e um boletim com uma ÚNICA aposta COMBINADA (ex: Múltipla, Acumulada, Dupla, Tripla).
+Analise a imagem de um boletim de aposta e extraia CADA aposta. A prioridade máxima é a precisão dos dados.
 
-1.  **SE for uma aposta COMBINADA (Múltipla/Acumulada):**
-    *   Procure por palavras-chave como "Múltipla", "Acumulada", "Dupla", etc.
-    *   Verifique se há um único valor de aposta total (stake) e um único valor de retorno potencial para várias seleções.
-    *   **Resultado:** Retorne um ÚNICO objeto JSON dentro de um array.
-        *   \`betStructure\`: "Accumulator"
-        *   \`betType\`: "Acumulada"
-        *   \`details\`: Um resumo, como "Acumulada de 3 seleções".
-        *   \`value\`: O valor TOTAL apostado.
-        *   \`odd\`: A ODD TOTAL combinada.
-        *   \`selections\`: Um array onde cada objeto representa uma seleção individual da múltipla, contendo \`details\`, \`betType\`, e \`odd\` para aquela seleção.
+**Estrutura dos Dados:**
+- \`market\`: O esporte (ex: "Futebol", "League of Legends", "Counter-Strike 2"). Se não for um destes, use o que encontrar (ex: "Basquete").
+- \`details\`: O evento principal. Para jogos, "Time A vs Time B". Para apostas em jogadores, pode ser o nome do jogador ou o jogo em que ele está.
+- \`betType\`: A aposta específica. Ex: "Mais de 2.5 Gols", "Handicap Asiático -1.5", "Jogador - Chutes: Mais de 1.5".
+- \`value\`: O valor monetário da aposta (stake).
+- \`odd\`: A cotação da aposta.
 
-2.  **SE forem múltiplas apostas INDIVIDUAIS:**
-    *   Cada aposta terá seu próprio valor (stake) e sua própria odd.
-    *   **Resultado:** Retorne um ARRAY de objetos JSON, um para cada aposta individual encontrada.
-        *   \`betStructure\`: "Single"
-        *   Preencha os outros campos (\`market\`, \`league\`, \`details\`, \`betType\`, \`value\`, \`odd\`) para cada aposta.
+**Tipos de Boletim:**
 
-3.  **Mercados e Tipos de Aposta Desconhecidos:**
-    *   Se você encontrar um mercado (esporte/jogo) que não seja um dos padrões ('League of Legends', 'Counter-Strike 2', 'Futebol'), retorne o nome exato que você identificar (ex: "Valorant", "NFL", "Basquete").
-    *   O mesmo se aplica a tipos de aposta. Se um tipo de aposta não for padrão, extraia o texto exato que descreve a aposta. Sua prioridade é a precisão dos dados extraídos.
+1.  **Aposta Simples (Single):**
+    *   A imagem mostra UMA aposta com seu próprio valor e odd.
+    *   **Sua resposta:** Um array contendo UM objeto JSON.
+    *   \`betStructure\`: "Single"
+    *   Preencha \`market\`, \`details\`, \`betType\`, \`value\`, \`odd\`.
 
-**Sempre retorne um array de objetos, mesmo que encontre apenas uma aposta.**
+2.  **Aposta Múltipla/Acumulada (Accumulator):**
+    *   A imagem mostra VÁRIAS seleções combinadas em UMA aposta, com um valor total e uma odd total. Procure por termos como "Múltipla", "Dupla", "Acumulada".
+    *   **Sua resposta:** Um array contendo UM objeto JSON.
+    *   \`betStructure\`: "Accumulator"
+    *   \`value\`: O valor TOTAL apostado.
+    *   \`odd\`: A ODD TOTAL da múltipla.
+    *   \`details\`: Um resumo como "Múltipla de 2 seleções".
+    *   \`selections\`: Um array de objetos, um para CADA seleção individual dentro da múltipla. Cada seleção DEVE ter:
+        *   \`details\`: O evento da seleção (ex: "Santos vs São Paulo").
+        *   \`betType\`: A aposta específica da seleção (ex: "Defesas de Goleiro Santos - Mais de 1.5").
+        *   \`odd\`: A odd individual da seleção.
+
+**Exemplo de Extração para uma Seleção de Múltipla:**
+Se a imagem mostra:
+"**Cruzeiro MG — RB Bragantino**
+Defesas de Goleiro RB Bragantino — Mais de 2.5 @ 1.25"
+
+A extração para ESTA seleção deve ser:
+\`{ "details": "Cruzeiro MG — RB Bragantino", "betType": "Defesas de Goleiro RB Bragantino — Mais de 2.5", "odd": 1.25 }\`
+
+**Regras Finais:**
+-   Sempre retorne um array \`[]\`.
+-   Se não conseguir extrair um campo, omita-o do JSON, mas tente extrair o máximo possível. A \`odd\` e o \`value\` devem ser números.
+-   Para apostas em jogadores, tente incluir o nome do time ou o evento no campo \`details\` se estiver visível.
 `;
 
     const response = await ai.models.generateContent({

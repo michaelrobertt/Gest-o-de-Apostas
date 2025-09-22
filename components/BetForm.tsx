@@ -129,7 +129,8 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeam
     const [currentSelection, setCurrentSelection] = useState<SelectionFormState>(initialSelectionState);
     const [units, setUnits] = useState('1');
     const [value, setValue] = useState('');
-    const [isAiSectionOpen, setIsAiSectionOpen] = useState(false);
+    const [isAiSectionOpen, setIsAiSectionOpen] = useState(true);
+    const [isManualFormOpen, setIsManualFormOpen] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
     
     useEffect(() => { handleUnitChange(units) }, [currentBankroll]);
@@ -483,35 +484,44 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeam
                     {isProcessing && <p className="text-center mt-2 text-brand-primary animate-pulse">Processando...</p>}
                 </div>
             )}
-            <h3 className="text-lg font-semibold border-t border-brand-border pt-4">Registrar Nova Aposta</h3>
-            <div className="flex bg-brand-bg rounded-lg p-1 border border-brand-border">
-                <button onClick={() => setBetStructure('Single')} className={`w-1/2 py-2 rounded-md font-semibold transition-colors ${betStructure === 'Single' ? 'bg-brand-primary text-white' : 'text-brand-text-secondary hover:bg-brand-border'}`}>Aposta Simples</button>
-                <button onClick={() => setBetStructure('Accumulator')} className={`w-1/2 py-2 rounded-md font-semibold transition-colors ${betStructure === 'Accumulator' ? 'bg-brand-primary text-white' : 'text-brand-text-secondary hover:bg-brand-border'}`}>Aposta Múltipla</button>
-            </div>
-            <form onSubmit={handleSubmit} className="space-y-4">
-                {betStructure === 'Single' ? renderSingleBetForm() : renderAccumulatorForm()}
-                
-                <fieldset className="border border-brand-border p-3 rounded-md">
-                    <legend className="text-sm font-medium text-brand-text-secondary px-2">Investimento</legend>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                        <div>
-                            <label htmlFor="units" className="block text-sm font-medium text-brand-text-secondary mb-1">Unidades</label>
-                            <select id="units" value={units} onChange={(e) => handleUnitChange(e.target.value)} className="w-full bg-brand-bg border border-brand-border rounded-md p-2">
-                                <option value="manual">Manual</option>
-                                {UNITS.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
-                            </select>
-                        </div>
-                        <div>
-                            <label htmlFor="value" className="block text-sm font-medium text-brand-text-secondary mb-1">Valor (R$)</label>
-                            <input id="value" type="number" step="0.01" value={value} onChange={e => { setValue(e.target.value); setUnits('manual'); }} className="w-full bg-brand-bg border border-brand-border rounded-md p-2" placeholder="25.00" />
-                        </div>
-                    </div>
-                </fieldset>
 
-                <button type="submit" className="w-full bg-brand-primary text-white font-bold py-3 rounded-md hover:bg-brand-primary-hover transition-colors disabled:bg-gray-500">
-                    Adicionar Aposta
-                </button>
-            </form>
+            <div className="flex justify-between items-center cursor-pointer border-t border-brand-border pt-4" onClick={() => setIsManualFormOpen(!isManualFormOpen)}>
+                <h3 className="text-lg font-semibold">Registrar Nova Aposta</h3>
+                <span className={`transform transition-transform ${isManualFormOpen ? 'rotate-180' : ''}`}>▼</span>
+            </div>
+
+            {isManualFormOpen && (
+                 <div className="space-y-4">
+                    <div className="flex bg-brand-bg rounded-lg p-1 border border-brand-border">
+                        <button onClick={() => setBetStructure('Single')} className={`w-1/2 py-2 rounded-md font-semibold transition-colors ${betStructure === 'Single' ? 'bg-brand-primary text-white' : 'text-brand-text-secondary hover:bg-brand-border'}`}>Aposta Simples</button>
+                        <button onClick={() => setBetStructure('Accumulator')} className={`w-1/2 py-2 rounded-md font-semibold transition-colors ${betStructure === 'Accumulator' ? 'bg-brand-primary text-white' : 'text-brand-text-secondary hover:bg-brand-border'}`}>Aposta Múltipla</button>
+                    </div>
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        {betStructure === 'Single' ? renderSingleBetForm() : renderAccumulatorForm()}
+                        
+                        <fieldset className="border border-brand-border p-3 rounded-md">
+                            <legend className="text-sm font-medium text-brand-text-secondary px-2">Investimento</legend>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                                <div>
+                                    <label htmlFor="units" className="block text-sm font-medium text-brand-text-secondary mb-1">Unidades</label>
+                                    <select id="units" value={units} onChange={(e) => handleUnitChange(e.target.value)} className="w-full bg-brand-bg border border-brand-border rounded-md p-2">
+                                        <option value="manual">Manual</option>
+                                        {UNITS.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label htmlFor="value" className="block text-sm font-medium text-brand-text-secondary mb-1">Valor (R$)</label>
+                                    <input id="value" type="number" step="0.01" value={value} onChange={e => { setValue(e.target.value); setUnits('manual'); }} className="w-full bg-brand-bg border border-brand-border rounded-md p-2" placeholder="25.00" />
+                                </div>
+                            </div>
+                        </fieldset>
+
+                        <button type="submit" className="w-full bg-brand-primary text-white font-bold py-3 rounded-md hover:bg-brand-primary-hover transition-colors disabled:bg-gray-500">
+                            Adicionar Aposta
+                        </button>
+                    </form>
+                </div>
+            )}
         </div>
     );
 };

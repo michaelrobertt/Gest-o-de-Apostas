@@ -461,21 +461,29 @@ export const useBankroll = (filterYear: number) => {
 
 
         // --- Daily Profit Calculation (Filtered by year) ---
-        const dailyProfitMap: { [key: string]: { profit: number; count: number } } = {};
+        const dailyProfitMap: { [key: string]: { profit: number; count: number; profitUnits: number; } } = {};
         const calendarBets = resolvedBets.filter(bet => new Date(bet.date).getFullYear() === filterYear);
         
         calendarBets.forEach(bet => {
             const date = getLocalYYYYMMDD(bet.date);
             if (!dailyProfitMap[date]) {
-                dailyProfitMap[date] = { profit: 0, count: 0 };
+                dailyProfitMap[date] = { profit: 0, count: 0, profitUnits: 0 };
             }
             dailyProfitMap[date].profit += bet.profitLoss;
             dailyProfitMap[date].count += 1;
+
+            if (bet.status === BetStatus.WON) {
+                dailyProfitMap[date].profitUnits += bet.units * (bet.odd - 1);
+            } else if (bet.status === BetStatus.LOST) {
+                dailyProfitMap[date].profitUnits -= bet.units;
+            }
         });
 
         const dailyProfit: DailyProfitPoint[] = Object.entries(dailyProfitMap).map(([date, data]) => ({
             date,
-            ...data
+            profit: data.profit,
+            profitUnits: data.profitUnits,
+            count: data.count,
         })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
 
