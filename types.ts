@@ -52,6 +52,7 @@ export interface BankrollData {
     initialBankroll: number;
     blacklistedTeams?: string[];
     withdrawals?: Withdrawal[];
+    bankrollGoal?: number;
 }
 
 export interface Stats {
@@ -67,6 +68,7 @@ export interface Stats {
     totalWithdrawn: number;
     totalInvested: number;
     maxDrawdown: number;
+    bankrollGoal: number;
 }
 
 export interface BankrollHistoryPoint {

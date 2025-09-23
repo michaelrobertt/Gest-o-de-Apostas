@@ -21,6 +21,7 @@ const App: React.FC = () => {
         updateBet,
         updateBetStatus,
         setInitialBankroll,
+        setBankrollGoal,
         importData,
         exportData,
         clearData,
@@ -72,7 +73,7 @@ const App: React.FC = () => {
             <main className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-8">
                 <div className="space-y-4">
                     <h1 className="text-2xl font-bold text-brand-text-primary">Visão Geral da Banca</h1>
-                    <StatsCards stats={stats} onSetInitialBankroll={setInitialBankroll} onAddWithdrawal={addWithdrawal} />
+                    <StatsCards stats={stats} onSetInitialBankroll={setInitialBankroll} onAddWithdrawal={addWithdrawal} onSetBankrollGoal={setBankrollGoal} />
                 </div>
                 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">

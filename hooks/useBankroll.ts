@@ -10,6 +10,7 @@ const defaultState: BankrollData = {
     initialBankroll: 100,
     blacklistedTeams: [],
     withdrawals: [],
+    bankrollGoal: 0,
 };
 
 // Helper to get local date in YYYY-MM-DD format
@@ -169,6 +170,7 @@ export const useBankroll = (filterYear: number) => {
                     bets: validatedBets, 
                     blacklistedTeams: Array.isArray(parsed.blacklistedTeams) ? parsed.blacklistedTeams : [], 
                     withdrawals: validatedWithdrawals,
+                    bankrollGoal: Number(parsed.bankrollGoal) || 0,
                 };
             }
             return defaultState;
@@ -322,6 +324,10 @@ export const useBankroll = (filterYear: number) => {
         setState(prevState => ({ ...prevState, initialBankroll: amount }));
     }, []);
 
+    const setBankrollGoal = useCallback((amount: number) => {
+        setState(prevState => ({ ...prevState, bankrollGoal: amount }));
+    }, []);
+
     const deleteTeamSuggestion = useCallback((teamToDelete: string) => {
         setState(prevState => ({
             ...prevState,
@@ -353,6 +359,7 @@ export const useBankroll = (filterYear: number) => {
                         : [];
 
                     const initialBankroll = Number(data.initialBankroll) || 0;
+                    const bankrollGoal = Number(data.bankrollGoal) || 0;
 
                     // Recalculate units for all imported bets to ensure consistency
                     const betsWithCorrectUnits = recalculateUnitsForBets(validatedBets, initialBankroll, validatedWithdrawals);
@@ -373,6 +380,7 @@ export const useBankroll = (filterYear: number) => {
                         bets: sortedBets,
                         blacklistedTeams: Array.isArray(data.blacklistedTeams) ? data.blacklistedTeams : [],
                         withdrawals: validatedWithdrawals,
+                        bankrollGoal,
                     });
                     resolve("Dados importados e otimizados com sucesso!");
                 } catch (error) {
@@ -574,8 +582,9 @@ export const useBankroll = (filterYear: number) => {
             totalWithdrawn: parseFloat(totalWithdrawn.toFixed(2)),
             totalInvested: parseFloat(totalInvested.toFixed(2)),
             maxDrawdown: maxDrawdownValue * 100,
+            bankrollGoal: state.bankrollGoal || 0,
         };
-    }, [state.bets, state.initialBankroll, state.blacklistedTeams, state.withdrawals, bankrollHistory]);
+    }, [state.bets, state.initialBankroll, state.blacklistedTeams, state.withdrawals, bankrollHistory, state.bankrollGoal]);
 
     const chartsData = useMemo<ChartsData>(() => {
         const resolvedBets = state.bets.filter(b => b.status !== BetStatus.PENDING);
@@ -667,5 +676,6 @@ export const useBankroll = (filterYear: number) => {
         stats,
         chartsData,
         availableMarkets,
+        setBankrollGoal,
     };
 };
