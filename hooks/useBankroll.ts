@@ -536,7 +536,7 @@ export const useBankroll = (filterYear: number) => {
 
             if (bet.status === BetStatus.WON) {
                 dailyProfitMap[date].profitUnits += bet.units * (bet.odd - 1);
-            } else if (status === BetStatus.LOST) {
+            } else if (bet.status === BetStatus.LOST) {
                 dailyProfitMap[date].profitUnits -= bet.units;
             }
         });

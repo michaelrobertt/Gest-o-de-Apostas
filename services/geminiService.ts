@@ -34,9 +34,12 @@ export const parseBetsFromImage = async (imageFile: File): Promise<Partial<Bet>[
 
     const imagePart = await fileToGenerativePart(imageFile);
 
-    // FIX: Escaped backticks inside the template literal to prevent them from being parsed as variables.
     const promptText = `
 Analise a imagem de um boletim de aposta e extraia CADA aposta. A prioridade máxima é a precisão dos dados.
+
+**Processo de Análise Inteligente:**
+1.  **Correção de OCR:** Use seu conhecimento de times e mercados de e-sports/esportes para corrigir possíveis erros de reconhecimento de texto (OCR). Por exemplo, se a imagem diz 'Fura' em um contexto de CS2, interprete como 'Furia'. Se diz 'Manchestir City', corrija para 'Manchester City'.
+2.  **Inferência de Contexto:** Se o mercado não estiver claro, analise os times e tipos de aposta para inferi-lo. Ex: 'Handicap de Rounds' indica 'Counter-Strike 2'; 'Total de Kills' indica 'League of Legends'; 'Escanteios' indica 'Futebol'.
 
 **Estrutura dos Dados:**
 - \`market\`: O esporte (ex: "Futebol", "League of Legends", "Counter-Strike 2"). Se não for um destes, use o que encontrar (ex: "Basquete").
@@ -143,15 +146,18 @@ export const reorganizeBetsWithAI = async (bets: Bet[]): Promise<{ id: string; m
     const allUpdates: { id: string; market: string; league: string }[] = [];
 
     const systemInstruction = `
-Você é um analista de dados especialista em apostas esportivas. Sua tarefa é analisar uma lista de apostas em formato JSON e padronizar as categorias 'market' e 'league' para cada aposta, garantindo consistência e precisão. Você deve entender o contexto e a hierarquia dos dados.
+Você é um analista de dados especialista em apostas esportivas com acesso a um vasto conhecimento sobre eventos e times. Sua tarefa é analisar uma lista de apostas em formato JSON e padronizar as categorias 'market' e 'league' para cada aposta, garantindo consistência e precisão. Você deve entender o contexto e a hierarquia dos dados.
+
+**Processo de Análise e Validação:**
+Para cada aposta, utilize seu conhecimento para verificar nomes de times, ligas e terminologias de apostas. Se um detalhe como 'CBLOL Academy' aparece, use essa informação para categorizar a liga corretamente, mesmo que o mercado original esteja genérico. Se um time como 'paiN Gaming' estiver em uma aposta com 'Handicap de Rounds', você deve inferir que o mercado é 'Counter-Strike 2', mesmo que não esteja explícito. Sua precisão é fundamental.
 
 **Regras de Categorização Hierárquica:**
 
 1.  **Counter-Strike 2:** Se a aposta for claramente de 'Counter-Strike 2' (CS2, CSGO), o 'market' DEVE ser 'Counter-Strike 2'. Ignore o 'market' original se estiver genérico como 'Esports'.
-    *   *Pistas:* 'Handicap de Rounds', 'Vencedor do Mapa', nomes de times como 'MIBR', 'Furia'.
+    *   *Pistas:* 'Handicap de Rounds', 'Vencedor do Mapa', nomes de times como 'MIBR', 'Furia', 'paiN Gaming'.
 
 2.  **League of Legends:** Se a aposta for claramente de 'League of Legends' (LOL), o 'market' DEVE ser 'League of Legends'.
-    *   *Pistas:* 'Handicap de Mapas', 'Total de Kills', 'First Blood', nomes de ligas como 'LPL', 'LCK', 'LEC'.
+    *   *Pistas:* 'Handicap de Mapas', 'Total de Kills', 'First Blood', nomes de ligas como 'LPL', 'LCK', 'LEC', 'CBLOL'.
 
 3.  **Futebol:** Se for de Futebol (Soccer), o 'market' DEVE ser 'Futebol'.
     *   *Pistas:* '1x2', 'Handicap Asiático', 'Ambas Marcam', 'Escanteios'.
@@ -161,8 +167,8 @@ Você é um analista de dados especialista em apostas esportivas. Sua tarefa é 
 5.  **Outro:** Se não se encaixar em nenhuma das anteriores, use o 'market' original ou 'Outro' se for muito genérico.
 
 **Campo 'league':**
--   Tente extrair a liga do campo 'details' ou 'league' original, se possível (ex: 'LPL', 'CBLOL').
--   Se não for possível, retorne 'N/A'.
+-   Tente extrair a liga específica do campo 'details' ou 'league' original (ex: 'LPL', 'CBLOL', 'Champions Tour Americas').
+-   Se não for possível identificar uma liga específica, retorne 'N/A'.
 
 **Formato da Resposta OBRIGATÓRIO:**
 Retorne um array de objetos JSON, onde cada objeto contém o 'id' da aposta original e os novos 'market' e 'league' padronizados, seguindo o schema fornecido.
