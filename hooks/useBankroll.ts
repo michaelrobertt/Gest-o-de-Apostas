@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Bet, BankrollData, BetStatus, Stats, ChartsData, Market, LolLeague, Withdrawal, BankrollHistoryPoint, MarketPerformancePoint, DailyProfitPoint, BetSelection } from '../types';
 import { reorganizeBetsWithAI } from '../services/geminiService';
+import { UNIT_PERCENTAGE } from '../constants';
 
 const LOCAL_STORAGE_KEY = 'betting-tracker-data';
 
@@ -103,6 +104,50 @@ const validateWithdrawal = (w: any): Withdrawal | null => {
     };
 };
 
+/**
+ * Recalculates the 'units' for a given list of bets based on the historical bankroll.
+ * This ensures unit consistency across the entire bet history.
+ */
+const recalculateUnitsForBets = (bets: Bet[], initialBankroll: number, withdrawals: Withdrawal[]): Bet[] => {
+    // Create a single sorted list of all events that affect bankroll (resolved bets and withdrawals)
+    const allResolvedEvents = [
+        ...bets.filter(b => b.status !== BetStatus.PENDING).map(b => ({ type: 'bet' as const, data: b })),
+        ...withdrawals.map(w => ({ type: 'withdrawal' as const, data: w }))
+    ].sort((a, b) => new Date(a.data.date).getTime() - new Date(b.data.date).getTime());
+
+    // Return a new array of bets with units recalculated for each one
+    return bets.map(betToUpdate => {
+        const betTimestamp = new Date(betToUpdate.date).getTime();
+
+        // Find all resolved events that happened strictly *before* the current bet was placed
+        const eventsBefore = allResolvedEvents.filter(e => new Date(e.data.date).getTime() < betTimestamp);
+
+        // Calculate the bankroll value at that specific point in time
+        let bankrollBeforeBet = initialBankroll;
+        for (const event of eventsBefore) {
+            if (event.type === 'bet') {
+                bankrollBeforeBet += event.data.profitLoss;
+            } else {
+                bankrollBeforeBet -= event.data.amount;
+            }
+        }
+        
+        const unitValueInCurrency = bankrollBeforeBet * UNIT_PERCENTAGE;
+        let newUnits = betToUpdate.units; // Default to existing value
+
+        // Recalculate if possible and meaningful
+        if (unitValueInCurrency > 0 && betToUpdate.value > 0) {
+            newUnits = betToUpdate.value / unitValueInCurrency;
+        } else if (betToUpdate.value > 0) {
+            // Cannot calculate units as a percentage of a zero or negative bankroll
+            newUnits = 0; 
+        }
+
+        return { ...betToUpdate, units: newUnits };
+    });
+};
+
+
 export const useBankroll = (filterYear: number) => {
     const [state, setState] = useState<BankrollData>(() => {
         try {
@@ -157,7 +202,14 @@ export const useBankroll = (filterYear: number) => {
                 return prevState;
             }
             
-            const sortedBets = [...prevState.bets, validatedBet].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            const allBetsCombined = [...prevState.bets, validatedBet];
+            const betsWithCorrectUnits = recalculateUnitsForBets(
+                allBetsCombined, 
+                prevState.initialBankroll, 
+                prevState.withdrawals || []
+            );
+
+            const sortedBets = betsWithCorrectUnits.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
             return { ...prevState, bets: sortedBets };
         });
     }, []);
@@ -212,29 +264,58 @@ export const useBankroll = (filterYear: number) => {
 
     const updateBet = useCallback((betId: string, updatedBetData: Bet) => {
         setState(prevState => {
-            const validatedBet = validateBetData(updatedBetData);
-            if (!validatedBet) {
-                console.error("Failed to update with invalid bet data", updatedBetData);
+            const betExists = prevState.bets.some(b => b.id === betId);
+            if (!betExists) {
+                console.error("Bet to update not found");
                 return prevState;
             }
-            const newBets = prevState.bets.map(bet => (bet.id === betId ? validatedBet : bet));
-            const sortedBets = newBets.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            
+            // First, apply the specific update for the bet being edited.
+            const provisionallyUpdatedBets = prevState.bets.map(b => b.id === betId ? updatedBetData : b);
+
+            // Now, recalculate units for the *entire* history to ensure consistency.
+            const betsWithCorrectUnits = recalculateUnitsForBets(
+                provisionallyUpdatedBets, 
+                prevState.initialBankroll, 
+                prevState.withdrawals || []
+            );
+            
+            // Validate the specific bet that was changed after unit recalculation.
+            const finalBet = betsWithCorrectUnits.find(b => b.id === betId);
+            if (!finalBet || !validateBetData(finalBet)) {
+                 console.error("Failed to update with invalid bet data after recalculation", finalBet);
+                 return prevState; // Revert if validation fails
+            }
+
+            const sortedBets = betsWithCorrectUnits.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
             return { ...prevState, bets: sortedBets };
         });
     }, []);
 
+
     const updateBetStatus = useCallback((betId: string, newStatus: BetStatus.WON | BetStatus.LOST) => {
-        setState(prevState => ({
-            ...prevState,
-            bets: prevState.bets.map(bet => {
+        setState(prevState => {
+            let updatedBet: Bet | undefined;
+            const newBets = prevState.bets.map(bet => {
                 if (bet.id === betId) {
                     const updatedBetWithStatus = {...bet, status: newStatus};
-                    const validatedBet = validateBetData(updatedBetWithStatus);
-                    return validatedBet || bet; // Fallback to original bet if validation fails
+                    updatedBet = validateBetData(updatedBetWithStatus) || bet;
+                    return updatedBet;
                 }
                 return bet;
-            }),
-        }));
+            });
+
+            if (!updatedBet) return prevState;
+
+            // Recalculate all units because a status change affects historical bankroll for subsequent bets.
+            const betsWithCorrectUnits = recalculateUnitsForBets(
+                newBets,
+                prevState.initialBankroll,
+                prevState.withdrawals || []
+            );
+
+            return { ...prevState, bets: betsWithCorrectUnits };
+        });
     }, []);
 
     const setInitialBankroll = useCallback((amount: number) => {
@@ -267,23 +348,28 @@ export const useBankroll = (filterYear: number) => {
                         ? data.bets.map(validateBetData).filter((bet): bet is Bet => bet !== null)
                         : [];
                     
+                    const validatedWithdrawals = Array.isArray(data.withdrawals)
+                        ? data.withdrawals.map(validateWithdrawal).filter((w): w is Withdrawal => w !== null)
+                        : [];
+
+                    const initialBankroll = Number(data.initialBankroll) || 0;
+
+                    // Recalculate units for all imported bets to ensure consistency
+                    const betsWithCorrectUnits = recalculateUnitsForBets(validatedBets, initialBankroll, validatedWithdrawals);
+                    
                     // --- Automatic AI Reorganization on Import ---
-                    const updates = await reorganizeBetsWithAI(validatedBets);
+                    const updates = await reorganizeBetsWithAI(betsWithCorrectUnits);
                     const updatesMap = new Map(updates.map(u => [u.id, { market: u.market, league: u.league }]));
-                    const reorganizedBets = validatedBets.map(bet => {
+                    const reorganizedBets = betsWithCorrectUnits.map(bet => {
                         const update = updatesMap.get(bet.id);
                         return update ? { ...bet, market: update.market, league: update.league } : bet;
                     });
                     // --- End of Reorganization ---
 
-                    const validatedWithdrawals = Array.isArray(data.withdrawals)
-                        ? data.withdrawals.map(validateWithdrawal).filter((w): w is Withdrawal => w !== null)
-                        : [];
-                    
                     const sortedBets = reorganizedBets.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
                     setState({ 
-                        initialBankroll: Number(data.initialBankroll) || 0, 
+                        initialBankroll, 
                         bets: sortedBets,
                         blacklistedTeams: Array.isArray(data.blacklistedTeams) ? data.blacklistedTeams : [],
                         withdrawals: validatedWithdrawals,
@@ -314,11 +400,23 @@ export const useBankroll = (filterYear: number) => {
             return "Nenhuma aposta válida foi adicionada.";
         }
 
-        const allBetsForReorg = [...state.bets, ...newValidatedBets];
-        await runAIReorganization(allBetsForReorg);
+        // Create a snapshot of the current state to work with
+        const currentBets = state.bets;
+        const currentWithdrawals = state.withdrawals || [];
+        const currentInitialBankroll = state.initialBankroll;
+        
+        // Combine new and existing bets
+        const allBetsCombined = [...currentBets, ...newValidatedBets];
+
+        // Recalculate units for the entire history, including the new bets
+        const allBetsWithCorrectUnits = recalculateUnitsForBets(allBetsCombined, currentInitialBankroll, currentWithdrawals);
+
+        // Now, run the AI reorganization on this corrected data. 
+        // `runAIReorganization` will then take this array as its base and set the final state.
+        await runAIReorganization(allBetsWithCorrectUnits);
 
         return `${newValidatedBets.length} aposta(s) adicionada(s) e todo o histórico foi otimizado.`;
-    }, [state.bets, runAIReorganization]);
+    }, [state.bets, state.initialBankroll, state.withdrawals, runAIReorganization]);
 
 
     const exportData = useCallback((): Promise<void> => {
