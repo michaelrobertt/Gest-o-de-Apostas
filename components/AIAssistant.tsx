@@ -10,9 +10,10 @@ interface AIAssistantProps {
     stats: Stats;
     performanceByMarket: MarketPerformancePoint[];
     onAddWithdrawal: (amount: number) => void;
+    onReorganize: () => Promise<string>;
 }
 
-const AIAssistant: React.FC<AIAssistantProps> = ({ bets, withdrawals, stats, performanceByMarket, onAddWithdrawal }) => {
+const AIAssistant: React.FC<AIAssistantProps> = ({ bets, withdrawals, stats, performanceByMarket, onAddWithdrawal, onReorganize }) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [betRecommendation, setBetRecommendation] = useState<AIRecommendation | null>(null);
@@ -21,32 +22,42 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ bets, withdrawals, stats, per
     const resolvedBetsCount = bets.filter(b => b.status !== BetStatus.PENDING).length;
     const canAnalyze = resolvedBetsCount >= 5;
 
-    const fetchAnalysis = useCallback(async () => {
+    const analyzeAndReorganize = useCallback(async () => {
         if (!canAnalyze) {
-            toast.error("A IA precisa de pelo menos 5 apostas resolvidas para uma análise significativa.");
-            return;
+            throw new Error("A IA precisa de pelo menos 5 apostas resolvidas para uma análise significativa.");
         }
-
-        setLoading(true);
+        
         setError(null);
-        setBetRecommendation(null); // Clear previous results
-        setWithdrawalSuggestion(null);
+        
+        // Step 1: Reorganize bets silently in the background
+        await onReorganize();
 
-        try {
-            const [betRec, withdrawalSug] = await Promise.all([
-                getAIRecommendation(bets, stats, performanceByMarket),
-                getAIWithdrawalSuggestion(stats, withdrawals)
-            ]);
-            setBetRecommendation(betRec);
-            setWithdrawalSuggestion(withdrawalSug);
-        } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : "Ocorreu um erro na IA.";
-            setError(errorMessage);
-            toast.error(errorMessage);
-        } finally {
-            setLoading(false);
-        }
-    }, [bets, stats, performanceByMarket, canAnalyze, withdrawals]);
+        // Step 2: Fetch AI analysis
+        const [betRec, withdrawalSug] = await Promise.all([
+            getAIRecommendation(bets, stats, performanceByMarket),
+            getAIWithdrawalSuggestion(stats, withdrawals)
+        ]);
+
+        setBetRecommendation(betRec);
+        setWithdrawalSuggestion(withdrawalSug);
+
+    }, [bets, stats, performanceByMarket, canAnalyze, withdrawals, onReorganize]);
+
+    const handleAnalysisClick = () => {
+        setLoading(true);
+        toast.promise(
+            analyzeAndReorganize(),
+            {
+                loading: 'Analisando e otimizando dados...',
+                success: 'Análise concluída e dados otimizados!',
+                error: (err) => {
+                    const errorMessage = err instanceof Error ? err.message : "Ocorreu um erro na IA.";
+                    setError(errorMessage);
+                    return errorMessage;
+                },
+            }
+        ).finally(() => setLoading(false));
+    };
 
     const handleWithdrawSuggested = () => {
         if(withdrawalSuggestion?.suggestedAmount) {
@@ -67,7 +78,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ bets, withdrawals, stats, per
     };
 
     const renderBody = () => {
-        if (loading) {
+        if (loading && !betRecommendation) { // Show loading only on the first run
             return (
                 <div className="text-center text-brand-text-secondary p-4 animate-pulse">
                     <p>IA analisando seu desempenho...</p>
@@ -75,7 +86,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ bets, withdrawals, stats, per
             );
         }
 
-        if (error) {
+        if (error && !betRecommendation) {
             return (
                 <div className="text-center text-red-400 p-4">
                     <p>{error}</p>
@@ -158,7 +169,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ bets, withdrawals, stats, per
             </div>
              <div className="p-4 border-t border-brand-border">
                  <button
-                    onClick={fetchAnalysis}
+                    onClick={handleAnalysisClick}
                     className="w-full bg-brand-primary text-white font-bold py-2 rounded-md hover:bg-brand-primary-hover transition-colors flex items-center justify-center gap-2 disabled:bg-brand-border disabled:text-brand-text-secondary disabled:cursor-not-allowed"
                     disabled={loading || !canAnalyze}
                 >

@@ -16,6 +16,7 @@ const App: React.FC = () => {
     const {
         state,
         addBet,
+        addBetsFromImage,
         deleteBet,
         updateBet,
         updateBetStatus,
@@ -25,6 +26,7 @@ const App: React.FC = () => {
         clearData,
         deleteTeamSuggestion,
         addWithdrawal,
+        reorganizeBets,
         stats,
         chartsData,
         availableMarkets,
@@ -35,7 +37,8 @@ const App: React.FC = () => {
         if (years.size === 0) {
             return [new Date().getFullYear()];
         }
-        return Array.from(years).sort((a, b) => b - a); // Descending order
+        // FIX: Explicitly type the sort callback parameters to ensure they are treated as numbers.
+        return Array.from(years).sort((a: number, b: number) => b - a); // Descending order
     }, [state.bets]);
 
     const handleDataAction = (action: () => Promise<string | void>) => {
@@ -114,10 +117,12 @@ const App: React.FC = () => {
                             stats={stats}
                             performanceByMarket={chartsData.performanceByMarket}
                             onAddWithdrawal={addWithdrawal}
+                            onReorganize={reorganizeBets}
                         />
                          <BetForm
                             currentBankroll={stats.currentBankroll}
                             addBet={addBet}
+                            addBetsFromImage={addBetsFromImage}
                             existingTeams={stats.existingTeams}
                             deleteTeamSuggestion={deleteTeamSuggestion}
                             availableMarkets={availableMarkets}

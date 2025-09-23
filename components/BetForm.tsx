@@ -80,6 +80,7 @@ const TeamInput: React.FC<TeamInputProps> = ({ value, onChange, placeholder, tea
 interface BetFormProps {
     currentBankroll: number;
     addBet: (bet: Omit<Bet, 'id' | 'date' | 'profitLoss' | 'status'>) => void;
+    addBetsFromImage: (bets: Partial<Bet>[]) => Promise<string>;
     existingTeams: Record<string, string[]>;
     deleteTeamSuggestion: (team: string) => void;
     availableMarkets: string[];
@@ -120,7 +121,7 @@ interface FormAccumulatorSelection extends BetSelection {
 const initialSelectionState: SelectionFormState = { market: Market.LOL, league: LolLeague.LPL, betType: BET_TYPES[Market.LOL][0], details: '', odd: '' };
 const initialSingleBetState: SingleBetState = { teamA: '', teamB: '', odd: '', betType: BET_TYPES[Market.LOL][0], market: Market.LOL, league: LolLeague.LPL };
 
-const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeams, deleteTeamSuggestion, availableMarkets }) => {
+const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, addBetsFromImage, existingTeams, deleteTeamSuggestion, availableMarkets }) => {
     const [betStructure, setBetStructure] = useState<'Single' | 'Accumulator'>('Single');
     const [singleBetState, setSingleBetState] = useState<SingleBetState>(initialSingleBetState);
     const [specificSelection, setSpecificSelection] = useState<SpecificSelectionState>({});
@@ -241,80 +242,43 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, existingTeam
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
         if (!files || files.length === 0) return;
-
+    
         setIsProcessing(true);
         const loadingToastId = toast.loading(`Analisando ${files.length} imagem(ns) com IA...`);
-
+    
         try {
-            const parsingPromises = Array.from(files).map(file => parseBetsFromImage(file));
+            const parsingPromises = Array.from(files).map((file: File) => parseBetsFromImage(file));
             const results = await Promise.allSettled(parsingPromises);
-
-            let totalSuccessfulAdds = 0;
-            let totalInvalidBets = 0;
+    
+            const allParsedBets: Partial<Bet>[] = [];
             let totalFailedImages = 0;
-
+    
             results.forEach(result => {
-                if (result.status === 'fulfilled') {
-                    const parsedBets = result.value;
-                    if (!parsedBets || parsedBets.length === 0) {
-                        return;
-                    }
-
-                    for (const pBet of parsedBets) {
-                        if (pBet.details && pBet.value && pBet.odd && pBet.market && pBet.betType && pBet.betStructure) {
-                            const betValue = Number(pBet.value);
-                            let finalUnits = pBet.units || 0;
-
-                            if (finalUnits === 0 && betValue > 0) {
-                                if (currentBankroll > 0 && UNIT_PERCENTAGE > 0) {
-                                    finalUnits = betValue / (currentBankroll * UNIT_PERCENTAGE);
-                                }
-                            }
-
-                            addBet({
-                                market: pBet.market,
-                                league: pBet.league || 'N/A',
-                                betStructure: pBet.betStructure,
-                                betType: pBet.betType,
-                                details: pBet.details,
-                                selections: pBet.selections,
-                                units: finalUnits,
-                                value: betValue,
-                                odd: Number(pBet.odd)
-                            });
-                            totalSuccessfulAdds++;
-                        } else {
-                            totalInvalidBets++;
-                        }
-                    }
-                } else {
+                if (result.status === 'fulfilled' && result.value && result.value.length > 0) {
+                    allParsedBets.push(...result.value);
+                } else if (result.status === 'rejected') {
                     totalFailedImages++;
                     console.error("Falha ao analisar imagem:", result.reason);
                 }
             });
+    
+            if (allParsedBets.length > 0) {
+                const successMessage = await addBetsFromImage(allParsedBets);
+                toast.success(successMessage);
+            } else {
+                 toast("Nenhuma aposta foi encontrada nas imagens fornecidas.");
+            }
 
-            toast.dismiss(loadingToastId);
-            
-            if (totalSuccessfulAdds > 0) {
-                toast.success(`${totalSuccessfulAdds} aposta(s) registrada(s) com sucesso!`);
-            }
-            if (totalInvalidBets > 0) {
-                toast.error(`${totalInvalidBets} aposta(s) nas imagens não puderam ser lidas completamente.`);
-            }
             if (totalFailedImages > 0) {
-                toast.error(`Falha ao processar ${totalFailedImages} imagem(ns). Verifique o console para mais detalhes.`);
+                toast.error(`Falha ao processar ${totalFailedImages} imagem(ns).`);
             }
-            if (totalSuccessfulAdds === 0 && totalInvalidBets === 0 && totalFailedImages === 0) {
-                // FIX: Property 'info' does not exist on type 'toast'. Replaced with the default toast function.
-                toast("Nenhuma aposta foi encontrada nas imagens fornecidas.");
-            }
-
+    
         } catch (error) {
-            toast.dismiss(loadingToastId);
             toast.error(error instanceof Error ? error.message : 'Ocorreu um erro desconhecido.');
         } finally {
+            toast.dismiss(loadingToastId);
             setIsProcessing(false);
-            if(e.target) {
+            if (e.target) {
                 e.target.value = '';
             }
         }

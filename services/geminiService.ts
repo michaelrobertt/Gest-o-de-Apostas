@@ -134,6 +134,85 @@ A extração para ESTA seleção deve ser:
     }
 };
 
+export const reorganizeBetsWithAI = async (bets: Bet[]): Promise<{ id: string; market: string; league: string }[]> => {
+    if (!process.env.API_KEY) {
+        throw new Error("A chave da API do Gemini não está configurada.");
+    }
+
+    const BATCH_SIZE = 50; // Process bets in chunks to avoid token limits
+    const allUpdates: { id: string; market: string; league: string }[] = [];
+
+    const systemInstruction = `
+Você é um analista de dados especialista em apostas esportivas. Sua tarefa é analisar uma lista de apostas em formato JSON e padronizar as categorias 'market' e 'league' para cada aposta, garantindo consistência e precisão. Você deve entender o contexto e a hierarquia dos dados.
+
+**Regras de Categorização Hierárquica:**
+
+1.  **Counter-Strike 2:** Se a aposta for claramente de 'Counter-Strike 2' (CS2, CSGO), o 'market' DEVE ser 'Counter-Strike 2'. Ignore o 'market' original se estiver genérico como 'Esports'.
+    *   *Pistas:* 'Handicap de Rounds', 'Vencedor do Mapa', nomes de times como 'MIBR', 'Furia'.
+
+2.  **League of Legends:** Se a aposta for claramente de 'League of Legends' (LOL), o 'market' DEVE ser 'League of Legends'.
+    *   *Pistas:* 'Handicap de Mapas', 'Total de Kills', 'First Blood', nomes de ligas como 'LPL', 'LCK', 'LEC'.
+
+3.  **Futebol:** Se for de Futebol (Soccer), o 'market' DEVE ser 'Futebol'.
+    *   *Pistas:* '1x2', 'Handicap Asiático', 'Ambas Marcam', 'Escanteios'.
+
+4.  **Esports (Geral):** Se for um e-sport, mas não for CS2 ou LOL (ex: Valorant, Dota 2) ou se o 'market' original já for 'Esports' e não houver pistas suficientes para especificar, o 'market' DEVE ser 'Esports (Geral)'.
+
+5.  **Outro:** Se não se encaixar em nenhuma das anteriores, use o 'market' original ou 'Outro' se for muito genérico.
+
+**Campo 'league':**
+-   Tente extrair a liga do campo 'details' ou 'league' original, se possível (ex: 'LPL', 'CBLOL').
+-   Se não for possível, retorne 'N/A'.
+
+**Formato da Resposta OBRIGATÓRIO:**
+Retorne um array de objetos JSON, onde cada objeto contém o 'id' da aposta original e os novos 'market' e 'league' padronizados, seguindo o schema fornecido.
+`;
+
+    for (let i = 0; i < bets.length; i += BATCH_SIZE) {
+        const batchBets = bets.slice(i, i + BATCH_SIZE);
+        const betsForAnalysis = batchBets.map(({ id, market, details, betType, league }) => ({ id, market, league, details, betType }));
+        
+        const userPrompt = `Analise esta lista de apostas e retorne os dados padronizados:\n${JSON.stringify(betsForAnalysis, null, 2)}`;
+
+        try {
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: userPrompt,
+                config: {
+                    systemInstruction: systemInstruction,
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                id: { type: Type.STRING },
+                                market: { type: Type.STRING },
+                                league: { type: Type.STRING },
+                            },
+                            required: ["id", "market", "league"],
+                        },
+                    },
+                },
+            });
+
+            const parsedJson = JSON.parse(response.text);
+            if (Array.isArray(parsedJson)) {
+                allUpdates.push(...parsedJson);
+            } else {
+                console.warn(`AI response for a batch was not a valid array:`, parsedJson);
+            }
+        } catch (e) {
+            const errorMessage = e instanceof Error ? e.message : String(e);
+            console.error(`Falha ao processar lote de reorganização da IA [${i}-${i + BATCH_SIZE}]:`, errorMessage, e);
+            throw new Error(`A IA encontrou um erro ao processar os dados. Tente novamente. Detalhes: ${errorMessage}`);
+        }
+    }
+
+    return allUpdates;
+};
+
+
 export const getAIRecommendation = async (
     bets: Bet[],
     stats: Stats,

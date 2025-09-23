@@ -26,10 +26,10 @@ export const HANDICAP_OPTIONS: string[] = [
 ];
 
 export const UNITS: { label: string, value: number }[] = [
-    { label: '0.5U', value: 0.5 },
-    { label: '1U', value: 1 },
-    { label: '2U', value: 2 },
-    { label: '3U', value: 3 },
+    { label: '0,5U (0,5%)', value: 0.5 },
+    { label: '1U (1%)', value: 1 },
+    { label: '2U (2%)', value: 2 },
+    { label: '3U (3%)', value: 3 },
 ];
 
-export const UNIT_PERCENTAGE = 0.03; // 3%
+export const UNIT_PERCENTAGE = 0.01; // 1%

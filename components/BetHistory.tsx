@@ -1,7 +1,6 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { Bet, BetStatus, Market, LolLeague } from '../types';
-import { PencilIcon, TrashIcon, CheckCircleIcon, XCircleIcon, ClockIcon, SearchIcon } from './icons';
+import { PencilIcon, TrashIcon, CheckCircleIcon, XCircleIcon, ClockIcon, SearchIcon, SparklesIcon } from './icons';
 import Modal from './Modal';
 import { toast } from 'react-hot-toast';
 import { MARKETS, LOL_LEAGUES } from '../constants';
@@ -51,6 +50,7 @@ const EditBetForm: React.FC<EditBetFormProps> = ({ bet, onSave, onCancel }) => {
                     <label className="block text-sm font-medium text-brand-text-secondary mb-1">Mercado</label>
                     <select name="market" value={formData.market} onChange={handleChange} className="w-full bg-brand-bg border border-brand-border rounded-md p-2">
                          {MARKETS.map(m => <option key={m} value={m}>{m}</option>)}
+                         {!MARKETS.includes(formData.market as Market) && <option value={formData.market}>{formData.market}</option>}
                     </select>
                 </div>
                 {formData.market === Market.LOL && (
@@ -218,6 +218,7 @@ const BetRow: React.FC<BetRowProps> = ({ bet, onDelete, onUpdateStatus, onEdit }
     )
 };
 
+type SortOption = 'date-desc' | 'date-asc' | 'market-asc' | 'profit-desc' | 'profit-asc' | 'status';
 
 interface BetHistoryProps {
     bets: Bet[];
@@ -230,37 +231,61 @@ const BetHistory: React.FC<BetHistoryProps> = ({ bets, onDelete, onUpdateStatus,
     const [editingBet, setEditingBet] = useState<Bet | null>(null);
     const [filter, setFilter] = useState<BetStatus | 'all'>('all');
     const [searchQuery, setSearchQuery] = useState('');
+    const [sortOption, setSortOption] = useState<SortOption>('date-desc');
     const [page, setPage] = useState(1);
     const betsPerPage = 10;
 
-    const filteredBets = useMemo(() => {
-        return bets
+    const sortedAndFilteredBets = useMemo(() => {
+        const filtered = bets
             .filter(bet => filter === 'all' || bet.status === filter)
             .filter(bet => {
                 if (!searchQuery) return true;
                 const lowerCaseQuery = searchQuery.toLowerCase();
                 const detailsMatch = bet.details.toLowerCase().includes(lowerCaseQuery);
+                const marketMatch = bet.market.toLowerCase().includes(lowerCaseQuery);
                 const selectionsMatch = bet.selections && bet.selections.some(s => 
                     s.details.toLowerCase().includes(lowerCaseQuery) ||
                     s.betType.toLowerCase().includes(lowerCaseQuery)
                 );
-                return detailsMatch || selectionsMatch;
+                return detailsMatch || selectionsMatch || marketMatch;
             });
-    }, [bets, filter, searchQuery]);
+        
+        return filtered.sort((a, b) => {
+            switch(sortOption) {
+                case 'date-asc':
+                    return new Date(a.date).getTime() - new Date(b.date).getTime();
+                case 'market-asc':
+                    return a.market.localeCompare(b.market);
+                case 'profit-desc':
+                    return b.profitLoss - a.profitLoss;
+                case 'profit-asc':
+                    return a.profitLoss - b.profitLoss;
+                case 'status':
+                    const statusOrder = { [BetStatus.PENDING]: 0, [BetStatus.WON]: 1, [BetStatus.LOST]: 2 };
+                    return statusOrder[a.status] - statusOrder[b.status];
+                case 'date-desc':
+                default:
+                    // A 'bets' prop já vem ordenada por data desc, mas refazemos para garantir
+                    return new Date(b.date).getTime() - new Date(a.date).getTime();
+            }
+        });
+    }, [bets, filter, searchQuery, sortOption]);
 
     const paginatedBets = useMemo(() => {
         const start = (page - 1) * betsPerPage;
-        return filteredBets.slice(start, start + betsPerPage);
-    }, [filteredBets, page, betsPerPage]);
+        return sortedAndFilteredBets.slice(start, start + betsPerPage);
+    }, [sortedAndFilteredBets, page, betsPerPage]);
 
-    const totalPages = Math.ceil(filteredBets.length / betsPerPage);
+    const totalPages = Math.ceil(sortedAndFilteredBets.length / betsPerPage);
 
     useEffect(() => {
         // Reset to page 1 when filter changes and it would result in an empty page
-        if(page > totalPages) {
+        if(page > totalPages && totalPages > 0) {
+            setPage(1);
+        } else if (totalPages === 0 && page !== 1) {
             setPage(1);
         }
-    }, [filter, searchQuery, page, totalPages]);
+    }, [filter, searchQuery, sortOption, page, totalPages]);
 
 
     const handleUpdateBet = (updatedBet: Bet) => {
@@ -287,12 +312,27 @@ const BetHistory: React.FC<BetHistoryProps> = ({ bets, onDelete, onUpdateStatus,
     return (
         <div className="bg-brand-surface p-6 rounded-lg border border-brand-border space-y-4">
             <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-                <h3 className="text-lg font-semibold text-brand-text-primary">Histórico de Apostas ({filteredBets.length})</h3>
-                <div className="flex items-center gap-2 p-1 bg-brand-bg rounded-lg border border-brand-border">
-                    <button onClick={() => setFilter('all')} className={filterButtonClass('all')}>Todas</button>
-                    <button onClick={() => setFilter(BetStatus.PENDING)} className={filterButtonClass(BetStatus.PENDING)}>Pendentes</button>
-                    <button onClick={() => setFilter(BetStatus.WON)} className={filterButtonClass(BetStatus.WON)}>Ganhas</button>
-                    <button onClick={() => setFilter(BetStatus.LOST)} className={filterButtonClass(BetStatus.LOST)}>Perdidas</button>
+                <h3 className="text-lg font-semibold text-brand-text-primary">Histórico de Apostas ({sortedAndFilteredBets.length})</h3>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                    <div className="flex items-center gap-2 p-1 bg-brand-bg rounded-lg border border-brand-border">
+                        <button onClick={() => setFilter('all')} className={filterButtonClass('all')}>Todas</button>
+                        <button onClick={() => setFilter(BetStatus.PENDING)} className={filterButtonClass(BetStatus.PENDING)}>Pendentes</button>
+                        <button onClick={() => setFilter(BetStatus.WON)} className={filterButtonClass(BetStatus.WON)}>Ganhas</button>
+                        <button onClick={() => setFilter(BetStatus.LOST)} className={filterButtonClass(BetStatus.LOST)}>Perdidas</button>
+                    </div>
+                    <select
+                        value={sortOption}
+                        onChange={(e) => setSortOption(e.target.value as SortOption)}
+                        className="bg-brand-bg border border-brand-border rounded-lg py-2 px-3 text-sm focus:ring-1 focus:ring-brand-primary focus:outline-none w-full sm:w-auto"
+                        aria-label="Ordenar apostas"
+                    >
+                        <option value="date-desc">Mais Recentes</option>
+                        <option value="date-asc">Mais Antigos</option>
+                        <option value="market-asc">Mercado (A-Z)</option>
+                        <option value="profit-desc">Maior Lucro</option>
+                        <option value="profit-asc">Menor Lucro</option>
+                        <option value="status">Status</option>
+                    </select>
                 </div>
             </div>
 
@@ -300,7 +340,7 @@ const BetHistory: React.FC<BetHistoryProps> = ({ bets, onDelete, onUpdateStatus,
                 <SearchIcon className="w-5 h-5 text-brand-text-secondary absolute top-1/2 left-3 -translate-y-1/2" />
                 <input
                     type="text"
-                    placeholder="Pesquisar por time, detalhe ou tipo de aposta..."
+                    placeholder="Pesquisar por time, mercado, detalhe..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full bg-brand-bg border border-brand-border rounded-md p-2.5 pl-10 focus:ring-1 focus:ring-brand-primary focus:outline-none"

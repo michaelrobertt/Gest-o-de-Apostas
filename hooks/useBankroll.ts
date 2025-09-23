@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Bet, BankrollData, BetStatus, Stats, ChartsData, Market, LolLeague, Withdrawal, BankrollHistoryPoint, MarketPerformancePoint, DailyProfitPoint, BetSelection } from '../types';
+import { reorganizeBetsWithAI } from '../services/geminiService';
 
 const LOCAL_STORAGE_KEY = 'betting-tracker-data';
 
@@ -18,7 +19,6 @@ const getLocalYYYYMMDD = (dateString: string): string => {
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
 };
-
 
 const validateSelection = (sel: any): BetSelection | null => {
     if (typeof sel !== 'object' || sel === null) return null;
@@ -67,11 +67,12 @@ const validateBetData = (b: any): Bet | null => {
     }
     
     const rawLeague = String(b.league || b.context || 'N/A');
+    const rawMarket = String(b.market || Market.SOCCER);
 
     return {
         id: String(b.id || `${new Date().toISOString()}-${Math.random()}`),
         date: String(b.date || new Date().toISOString()),
-        market: String(b.market || Market.SOCCER),
+        market: rawMarket, // Normalization is now handled by a dedicated AI function
         league: (rawLeague === 'null' || rawLeague === 'undefined') ? 'N/A' : rawLeague,
         betStructure: b.betStructure === 'Accumulator' ? 'Accumulator' : 'Single',
         betType: String(b.betType || 'N/A'),
@@ -161,6 +162,35 @@ export const useBankroll = (filterYear: number) => {
         });
     }, []);
 
+    const runAIReorganization = useCallback(async (betsToUpdate?: Bet[]): Promise<string> => {
+        const betsToAnalyze = betsToUpdate || state.bets;
+        if (betsToAnalyze.length === 0) {
+            return "Nenhuma aposta para reorganizar.";
+        }
+        
+        const updates = await reorganizeBetsWithAI(betsToAnalyze);
+        
+        if (updates.length === 0) {
+            return "IA não encontrou nenhuma alteração para fazer.";
+        }
+
+        const updatesMap = new Map(updates.map(u => [u.id, { market: u.market, league: u.league }]));
+        let updatedCount = 0;
+
+        const updatedBets = betsToAnalyze.map(bet => {
+            const update = updatesMap.get(bet.id);
+            if (update && (bet.market !== update.market || bet.league !== update.league)) {
+                updatedCount++;
+                return { ...bet, market: update.market, league: update.league };
+            }
+            return bet;
+        });
+
+        setState(prevState => ({ ...prevState, bets: updatedBets }));
+        
+        return `Reorganização concluída! ${updatedCount} aposta(s) foram atualizadas pela IA.`;
+    }, [state.bets]);
+
     const addWithdrawal = useCallback((amount: number) => {
         setState(prevState => {
             const withdrawal: Withdrawal = {
@@ -218,10 +248,10 @@ export const useBankroll = (filterYear: number) => {
         }));
     }, []);
 
-    const importData = useCallback((file: File): Promise<string> => {
+    const importData = useCallback(async (file: File): Promise<string> => {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
-            reader.onload = (e) => {
+            reader.onload = async (e) => {
                 try {
                     const text = e.target?.result;
                     if (typeof text !== 'string') {
@@ -236,12 +266,21 @@ export const useBankroll = (filterYear: number) => {
                     const validatedBets = Array.isArray(data.bets)
                         ? data.bets.map(validateBetData).filter((bet): bet is Bet => bet !== null)
                         : [];
+                    
+                    // --- Automatic AI Reorganization on Import ---
+                    const updates = await reorganizeBetsWithAI(validatedBets);
+                    const updatesMap = new Map(updates.map(u => [u.id, { market: u.market, league: u.league }]));
+                    const reorganizedBets = validatedBets.map(bet => {
+                        const update = updatesMap.get(bet.id);
+                        return update ? { ...bet, market: update.market, league: update.league } : bet;
+                    });
+                    // --- End of Reorganization ---
 
                     const validatedWithdrawals = Array.isArray(data.withdrawals)
                         ? data.withdrawals.map(validateWithdrawal).filter((w): w is Withdrawal => w !== null)
                         : [];
                     
-                    const sortedBets = validatedBets.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                    const sortedBets = reorganizedBets.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
                     setState({ 
                         initialBankroll: Number(data.initialBankroll) || 0, 
@@ -249,7 +288,7 @@ export const useBankroll = (filterYear: number) => {
                         blacklistedTeams: Array.isArray(data.blacklistedTeams) ? data.blacklistedTeams : [],
                         withdrawals: validatedWithdrawals,
                     });
-                    resolve("Dados importados com sucesso!");
+                    resolve("Dados importados e otimizados com sucesso!");
                 } catch (error) {
                     reject(`Falha ao importar: ${error instanceof Error ? error.message : String(error)}`);
                 }
@@ -258,6 +297,29 @@ export const useBankroll = (filterYear: number) => {
             reader.readAsText(file);
         });
     }, []);
+
+    const addBetsFromImage = useCallback(async (parsedBets: Partial<Bet>[]): Promise<string> => {
+        const newValidatedBets = parsedBets.map(pBet => {
+             const betToValidate = {
+                ...pBet,
+                id: new Date().toISOString() + Math.random(),
+                date: new Date().toISOString(),
+                status: BetStatus.PENDING,
+                profitLoss: 0,
+            };
+            return validateBetData(betToValidate);
+        }).filter((b): b is Bet => b !== null);
+
+        if (newValidatedBets.length === 0) {
+            return "Nenhuma aposta válida foi adicionada.";
+        }
+
+        const allBetsForReorg = [...state.bets, ...newValidatedBets];
+        await runAIReorganization(allBetsForReorg);
+
+        return `${newValidatedBets.length} aposta(s) adicionada(s) e todo o histórico foi otimizado.`;
+    }, [state.bets, runAIReorganization]);
+
 
     const exportData = useCallback((): Promise<void> => {
         return new Promise((resolve) => {
@@ -439,7 +501,7 @@ export const useBankroll = (filterYear: number) => {
                     performanceMap[name].betsCount += 1;
                 };
 
-                const marketName = bet.market === Market.LOL ? 'League of Legends' : bet.market;
+                const marketName = bet.market;
                 updateMarket(marketName);
 
                 if (bet.market === Market.LOL && bet.league && bet.league.trim() && bet.league !== 'N/A') {
@@ -474,7 +536,7 @@ export const useBankroll = (filterYear: number) => {
 
             if (bet.status === BetStatus.WON) {
                 dailyProfitMap[date].profitUnits += bet.units * (bet.odd - 1);
-            } else if (bet.status === BetStatus.LOST) {
+            } else if (status === BetStatus.LOST) {
                 dailyProfitMap[date].profitUnits -= bet.units;
             }
         });
@@ -493,6 +555,7 @@ export const useBankroll = (filterYear: number) => {
     return {
         state,
         addBet,
+        addBetsFromImage,
         deleteBet,
         updateBet,
         updateBetStatus,
@@ -502,6 +565,7 @@ export const useBankroll = (filterYear: number) => {
         clearData,
         deleteTeamSuggestion,
         addWithdrawal,
+        reorganizeBets: runAIReorganization, // Expose for AI Assistant
         stats,
         chartsData,
         availableMarkets,
