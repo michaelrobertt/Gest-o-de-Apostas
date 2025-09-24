@@ -271,23 +271,24 @@ export const useBankroll = (filterYear: number) => {
                 console.error("Bet to update not found");
                 return prevState;
             }
-            
-            // First, apply the specific update for the bet being edited.
-            const provisionallyUpdatedBets = prevState.bets.map(b => b.id === betId ? updatedBetData : b);
 
-            // Now, recalculate units for the *entire* history to ensure consistency.
+            // First, validate the incoming form data to ensure profit/loss is correct based on status.
+            const validatedBetData = validateBetData(updatedBetData);
+            if (!validatedBetData) {
+                console.error("Failed to update with invalid bet data", updatedBetData);
+                return prevState;
+            }
+            
+            // Apply the validated update.
+            const provisionallyUpdatedBets = prevState.bets.map(b => b.id === betId ? validatedBetData : b);
+
+            // Now, recalculate units for the *entire* history to ensure consistency, as a change
+            // in profit/loss affects the bankroll for subsequent bets.
             const betsWithCorrectUnits = recalculateUnitsForBets(
                 provisionallyUpdatedBets, 
                 prevState.initialBankroll, 
                 prevState.withdrawals || []
             );
-            
-            // Validate the specific bet that was changed after unit recalculation.
-            const finalBet = betsWithCorrectUnits.find(b => b.id === betId);
-            if (!finalBet || !validateBetData(finalBet)) {
-                 console.error("Failed to update with invalid bet data after recalculation", finalBet);
-                 return prevState; // Revert if validation fails
-            }
 
             const sortedBets = betsWithCorrectUnits.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
             return { ...prevState, bets: sortedBets };
