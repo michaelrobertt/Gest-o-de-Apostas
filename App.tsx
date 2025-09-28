@@ -9,6 +9,7 @@ import BetForm from './components/BetForm';
 import AIAssistant from './components/AIAssistant';
 import BetHistory from './components/BetHistory';
 import { Toaster, toast } from 'react-hot-toast';
+import UnitIndicator from './components/UnitIndicator';
 
 const App: React.FC = () => {
     const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
@@ -74,6 +75,7 @@ const App: React.FC = () => {
                 <div className="space-y-4">
                     <h1 className="text-2xl font-bold text-brand-text-primary">Visão Geral da Banca</h1>
                     <StatsCards stats={stats} onSetInitialBankroll={setInitialBankroll} onAddWithdrawal={addWithdrawal} onSetBankrollGoal={setBankrollGoal} />
+                    <UnitIndicator currentBankroll={stats.currentBankroll} />
                 </div>
                 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
