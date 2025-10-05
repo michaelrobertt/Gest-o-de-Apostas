@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { Bet, Market, LolLeague, BetStatus, Stats, MarketPerformancePoint, AIRecommendation, AIWithdrawalSuggestion, Withdrawal } from '../types';
+import { Bet, Market, LolLeague, BetStatus, Stats, MarketPerformancePoint, AIRecommendation, AIWithdrawalSuggestion, Withdrawal, AILeverageSuggestion } from '../types';
 
 if (!process.env.API_KEY) {
   console.warn("API_KEY environment variable not set for Gemini. AI features will not work.");
@@ -460,5 +460,117 @@ Com base nesses dados e no seu protocolo estrito, forneça sua recomendação de
     } catch (e) {
         console.error("Failed to parse JSON from Gemini for withdrawal suggestion:", response.text);
         throw new Error("Não foi possível gerar a sugestão de saque da IA.");
+    }
+};
+
+export const getAILeverageSuggestion = async (
+    stats: Stats,
+    bets: Bet[]
+): Promise<AILeverageSuggestion> => {
+    if (!process.env.API_KEY) {
+        throw new Error("A chave da API do Gemini não está configurada.");
+    }
+    
+    const recentBets = bets
+        .filter(b => b.status !== BetStatus.PENDING)
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+        .slice(-20)
+        .map(({ units, odd, status, profitLoss }) => ({ units, odd, status, profitLoss }));
+
+    const systemInstruction = `
+Você é um Estrategista de Banca, um analista financeiro sênior especializado em gestão de risco e crescimento de capital para apostadores. Sua missão é fornecer conselhos prudentes e estratégicos para alavancar a banca de forma sustentável. Você DEVE priorizar a segurança e o crescimento de longo prazo em detrimento de ganhos rápidos e arriscados.
+
+**PROTOCOLO DE ANÁLISE ESTRITA:**
+
+1.  **Diagnóstico do Perfil:** Analise as estatísticas e o histórico recente para classificar o apostador em um dos quatro perfis. A sua justificativa DEVE ser clara e baseada nos dados.
+    *   **Recuperação:** O lucro total é negativo. O foco absoluto é disciplina, stakes mínimos e recuperação de confiança.
+    *   **Conservador:** Lucro positivo mas baixo (ex: ROI < 10%), ou lucro zero (breakeven). O apostador pode ser novo ou estar a construir uma base. Foco em crescimento composto, disciplina e consistência. Se não houver histórico de apostas, justifique como um perfil de "Ponto de Partida".
+    *   **Moderado:** Lucro sólido e bom desempenho (ex: ROI entre 10% e 25%). Pode assumir riscos calculados. Foco em otimização e exploração controlada.
+    *   **Agressivo:** Lucro muito alto (ex: ROI > 25%), talvez com um drawdown maior. O apostador demonstra alta tolerância ao risco (ou sorte). Foco em maximizar ganhos, mas com alertas SEVEROS sobre os perigos da variância.
+
+2.  **Geração de Conselhos (Baseado no Perfil):** Para cada perfil, você deve gerar conselhos específicos e acionáveis para cada uma das seguintes áreas.
+
+    *   **Proteção da Banca:** Dê uma dica fundamental para proteger o capital atual. Para perfis de 'Recuperação' e 'Conservador', foque em stop-loss ou limites de perda diária. Para 'Moderado' e 'Agressivo', foque em diversificação ou realização parcial de lucros.
+    *   **Estratégia de Alavancagem:** Descreva uma abordagem estratégica. Para 'Recuperação', é "não alavancar, mas reconstruir". Para 'Conservador', é "juros compostos lentos". Para 'Moderado', "aumento progressivo de stake". Para 'Agressivo', "Kelly Criterion simplificado" ou "uso de uma % do lucro".
+    *   **Stake Sugerido:** Defina uma % da banca e o valor em unidades (U) para as próximas apostas. Seja conservador. NUNCA sugira mais de 5% da banca, mesmo para o perfil agressivo. Para 'Recuperação', sugira 0.5% ou 1%.
+    *   **Range de Odds Ideal:** Sugira uma faixa de odds. Para 'Recuperação', odds baixas e de alta probabilidade (1.50-1.80). Para 'Conservador'/'Moderado', um range equilibrado (1.65-2.10). Para 'Agressivo', pode incluir odds mais altas (até 2.50), mas com a ressalva de que o volume deve ser menor.
+    *   **Gestão de Lucros:** Aconselhe o que fazer com os lucros. Para 'Recuperação', não há lucros a gerir. Para 'Conservador', "reinvestir 100%". Para 'Moderado', "reinvestir a maior parte, considerar pequenos saques". Para 'Agressivo', "realizar lucros regularmente para reduzir o risco".
+
+**REGRAS INQUEBRÁVEIS:**
+-   Sua linguagem deve ser profissional, calma e educativa.
+-   NUNCA dê conselhos de apostas específicas (ex: "aposte no Time X"). Foque apenas na estratégia de gestão.
+-   Seja realista. O crescimento é uma maratona, não um sprint.
+-   Responda estritamente no formato JSON definido pelo schema.
+`;
+
+    const prompt = `
+Análise de Dados para Estratégia de Alavancagem:
+
+**Estatísticas Atuais:**
+${JSON.stringify({
+    roi: stats.roi,
+    winRate: stats.winRate,
+    totalProfitLoss: stats.totalProfitLoss,
+    currentBankroll: stats.currentBankroll,
+    maxDrawdown: stats.maxDrawdown,
+    averageOdd: stats.averageOdd
+}, null, 2)}
+
+**Histórico Cronológico Recente (últimas 20 apostas resolvidas):**
+${JSON.stringify(recentBets, null, 2)}
+
+Com base nesses dados, aplique seu protocolo de análise e gere a estratégia de alavancagem completa.
+`;
+
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+            systemInstruction: systemInstruction,
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    profile: { type: Type.STRING, enum: ['Conservador', 'Moderado', 'Agressivo', 'Recuperação'] },
+                    profileReasoning: { type: Type.STRING },
+                    protectionAdvice: {
+                        type: Type.OBJECT,
+                        properties: { title: { type: Type.STRING }, description: { type: Type.STRING } },
+                    },
+                    leverageStrategy: {
+                        type: Type.OBJECT,
+                        properties: { title: { type: Type.STRING }, description: { type: Type.STRING } },
+                    },
+                    suggestedStake: {
+                        type: Type.OBJECT,
+                        properties: {
+                            bankrollPercentage: { type: Type.NUMBER },
+                            units: { type: Type.NUMBER },
+                            reasoning: { type: Type.STRING },
+                        },
+                    },
+                    optimalOddRange: {
+                        type: Type.OBJECT,
+                        properties: {
+                            min: { type: Type.NUMBER },
+                            max: { type: Type.NUMBER },
+                            reasoning: { type: Type.STRING },
+                        },
+                    },
+                    profitManagement: {
+                        type: Type.OBJECT,
+                        properties: { title: { type: Type.STRING }, description: { type: Type.STRING } },
+                    },
+                },
+            },
+        },
+    });
+
+    try {
+        const parsedJson = JSON.parse(response.text);
+        return parsedJson as AILeverageSuggestion;
+    } catch (e) {
+        console.error("Failed to parse JSON from Gemini for leverage suggestion:", response.text);
+        throw new Error("Não foi possível gerar a estratégia de alavancagem da IA.");
     }
 };

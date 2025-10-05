@@ -7,6 +7,7 @@ import PerformanceChart from './components/PerformanceChart';
 import ProfitCalendar from './components/ProfitCalendar';
 import BetForm from './components/BetForm';
 import AIAssistant from './components/AIAssistant';
+import AILeverageAssistant from './components/AILeverageAssistant';
 import BetHistory from './components/BetHistory';
 import { Toaster, toast } from 'react-hot-toast';
 import UnitIndicator from './components/UnitIndicator';
@@ -121,6 +122,10 @@ const App: React.FC = () => {
                             performanceByMarket={chartsData.performanceByMarket}
                             onAddWithdrawal={addWithdrawal}
                             onReorganize={reorganizeBets}
+                        />
+                        <AILeverageAssistant
+                            bets={state.bets}
+                            stats={stats}
                         />
                          <BetForm
                             currentBankroll={stats.currentBankroll}

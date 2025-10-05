@@ -118,3 +118,30 @@ export interface AIWithdrawalSuggestion {
     suggestedAmount: number;
     confidenceLevel: 'Baixo' | 'Médio' | 'Alto';
 }
+
+export interface AILeverageSuggestion {
+    profile: 'Conservador' | 'Moderado' | 'Agressivo' | 'Recuperação';
+    profileReasoning: string;
+    protectionAdvice: {
+        title: string;
+        description: string;
+    };
+    leverageStrategy: {
+        title: string;
+        description: string;
+    };
+    suggestedStake: {
+        bankrollPercentage: number;
+        units: number;
+        reasoning: string;
+    };
+    optimalOddRange: {
+        min: number;
+        max: number;
+        reasoning: string;
+    };
+    profitManagement: {
+        title: string;
+        description: string;
+    };
+}
