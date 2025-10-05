@@ -59,6 +59,12 @@ const AILeverageAssistant: React.FC<AILeverageAssistantProps> = ({ bets, stats }
             );
         }
 
+        const formatCurrency = (value: number) => `R$ ${value.toFixed(2).replace('.', ',')}`;
+        
+        const stakeInCurrency = stats.currentBankroll * (suggestion.suggestedStake.bankrollPercentage / 100);
+        const minReturn = stakeInCurrency * suggestion.optimalOddRange.min;
+        const maxReturn = stakeInCurrency * suggestion.optimalOddRange.max;
+
         return (
             <div className="p-4 space-y-4">
                 <div className={`p-3 rounded-lg border text-center ${getProfileColor(suggestion.profile)}`}>
@@ -74,11 +80,19 @@ const AILeverageAssistant: React.FC<AILeverageAssistantProps> = ({ bets, stats }
                     
                     <InfoCard icon={<LightBulbIcon className="w-5 h-5 text-brand-yellow" />} title={suggestion.leverageStrategy.title}>
                         <p>{suggestion.leverageStrategy.description}</p>
+                        <p className="mt-2 pt-2 border-t border-brand-border/50 text-xs italic">
+                            <span className="font-bold">Exemplo prático:</span> Investir <span className="font-bold text-brand-text-primary">{formatCurrency(stakeInCurrency)}</span> numa odd entre <span className="font-bold text-brand-text-primary">@{suggestion.optimalOddRange.min.toFixed(2)}</span> e <span className="font-bold text-brand-text-primary">@{suggestion.optimalOddRange.max.toFixed(2)}</span> pode gerar um retorno de <span className="font-bold text-brand-win">{formatCurrency(minReturn)}</span> a <span className="font-bold text-brand-win">{formatCurrency(maxReturn)}</span>.
+                        </p>
                     </InfoCard>
 
                     <InfoCard icon={<PercentIcon className="w-5 h-5 text-brand-indigo" />} title="Stake Sugerido">
-                        <p className="font-bold text-brand-indigo text-lg">{suggestion.suggestedStake.bankrollPercentage}% da banca ({suggestion.suggestedStake.units.toFixed(2)}U)</p>
-                        <p>{suggestion.suggestedStake.reasoning}</p>
+                        <p className="font-bold text-brand-indigo text-lg">
+                            {suggestion.suggestedStake.bankrollPercentage}% da banca ({suggestion.suggestedStake.units.toFixed(2)}U)
+                        </p>
+                        <p className="font-semibold text-brand-text-primary text-md -mt-1">
+                            {formatCurrency(stakeInCurrency)}
+                        </p>
+                        <p className="mt-1">{suggestion.suggestedStake.reasoning}</p>
                     </InfoCard>
 
                     <InfoCard icon={<TargetIcon className="w-5 h-5 text-brand-teal" />} title="Range de Odds Ideal">
