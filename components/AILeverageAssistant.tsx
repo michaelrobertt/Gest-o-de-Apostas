@@ -7,6 +7,7 @@ import { LightBulbIcon, RefreshCwIcon, ShieldCheckIcon, TargetIcon, PercentIcon,
 interface AILeverageAssistantProps {
     bets: Bet[];
     stats: Stats;
+    onSuggestionUpdate: (suggestion: AILeverageSuggestion | null) => void;
 }
 
 const InfoCard: React.FC<{ icon: React.ReactNode; title: string; children: React.ReactNode }> = ({ icon, title, children }) => (
@@ -18,7 +19,7 @@ const InfoCard: React.FC<{ icon: React.ReactNode; title: string; children: React
     </div>
 );
 
-const AILeverageAssistant: React.FC<AILeverageAssistantProps> = ({ bets, stats }) => {
+const AILeverageAssistant: React.FC<AILeverageAssistantProps> = ({ bets, stats, onSuggestionUpdate }) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [suggestion, setSuggestion] = useState<AILeverageSuggestion | null>(null);
@@ -30,17 +31,19 @@ const AILeverageAssistant: React.FC<AILeverageAssistantProps> = ({ bets, stats }
         try {
             const result = await getAILeverageSuggestion(stats, bets);
             setSuggestion(result);
+            onSuggestionUpdate(result); // Passa a sugestão para o componente pai
             toast.success('Estratégia de alavancagem gerada!');
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : "Ocorreu um erro na IA.";
             setError(errorMessage);
+            onSuggestionUpdate(null);
             toast.error(errorMessage);
         } finally {
             setLoading(false);
         }
-    }, [stats, bets]);
+    }, [stats, bets, onSuggestionUpdate]);
 
-    const getProfileColor = (profile: AILeverageSuggestion['profile']) => {
+    const getProfileColor = (profile?: AILeverageSuggestion['profile']) => {
         switch (profile) {
             case 'Agressivo': return 'bg-brand-danger/20 text-brand-danger border-brand-danger/50';
             case 'Moderado': return 'bg-brand-yellow/20 text-brand-yellow border-brand-yellow/50';
@@ -61,48 +64,68 @@ const AILeverageAssistant: React.FC<AILeverageAssistantProps> = ({ bets, stats }
 
         const formatCurrency = (value: number) => `R$ ${value.toFixed(2).replace('.', ',')}`;
         
-        const stakeInCurrency = stats.currentBankroll * (suggestion.suggestedStake.bankrollPercentage / 100);
-        const minReturn = stakeInCurrency * suggestion.optimalOddRange.min;
-        const maxReturn = stakeInCurrency * suggestion.optimalOddRange.max;
+        const bankrollPercentage = suggestion.suggestedStake?.bankrollPercentage ?? 0;
+        const stakeInCurrency = stats.currentBankroll * (bankrollPercentage / 100);
+
+        const minOdd = suggestion.optimalOddRange?.min ?? 0;
+        const maxOdd = suggestion.optimalOddRange?.max ?? 0;
+
+        const minReturn = stakeInCurrency * minOdd;
+        const maxReturn = stakeInCurrency * maxOdd;
+
 
         return (
             <div className="p-4 space-y-4">
-                <div className={`p-3 rounded-lg border text-center ${getProfileColor(suggestion.profile)}`}>
-                    <p className="font-bold text-sm">Seu Perfil Atual</p>
-                    <p className="text-xl font-bold">{suggestion.profile}</p>
-                    <p className="text-xs mt-1">{suggestion.profileReasoning}</p>
-                </div>
+                {suggestion.profile && (
+                    <div className={`p-3 rounded-lg border text-center ${getProfileColor(suggestion.profile)}`}>
+                        <p className="font-bold text-sm">Seu Perfil Atual</p>
+                        <p className="text-xl font-bold">{suggestion.profile}</p>
+                        <p className="text-xs mt-1">{suggestion.profileReasoning}</p>
+                    </div>
+                )}
                 
                 <div className="space-y-3">
-                     <InfoCard icon={<ShieldCheckIcon className="w-5 h-5 text-brand-blue" />} title={suggestion.protectionAdvice.title}>
-                        <p>{suggestion.protectionAdvice.description}</p>
-                    </InfoCard>
+                     {suggestion.protectionAdvice && (
+                        <InfoCard icon={<ShieldCheckIcon className="w-5 h-5 text-brand-blue" />} title={suggestion.protectionAdvice.title}>
+                           <p>{suggestion.protectionAdvice.description}</p>
+                       </InfoCard>
+                     )}
                     
-                    <InfoCard icon={<LightBulbIcon className="w-5 h-5 text-brand-yellow" />} title={suggestion.leverageStrategy.title}>
-                        <p>{suggestion.leverageStrategy.description}</p>
-                        <p className="mt-2 pt-2 border-t border-brand-border/50 text-xs italic">
-                            <span className="font-bold">Exemplo prático:</span> Investir <span className="font-bold text-brand-text-primary">{formatCurrency(stakeInCurrency)}</span> numa odd entre <span className="font-bold text-brand-text-primary">@{suggestion.optimalOddRange.min.toFixed(2)}</span> e <span className="font-bold text-brand-text-primary">@{suggestion.optimalOddRange.max.toFixed(2)}</span> pode gerar um retorno de <span className="font-bold text-brand-win">{formatCurrency(minReturn)}</span> a <span className="font-bold text-brand-win">{formatCurrency(maxReturn)}</span>.
-                        </p>
-                    </InfoCard>
+                    {suggestion.leverageStrategy && (
+                        <InfoCard icon={<LightBulbIcon className="w-5 h-5 text-brand-yellow" />} title={suggestion.leverageStrategy.title}>
+                            <p>{suggestion.leverageStrategy.description}</p>
+                            {(stakeInCurrency > 0 && minOdd > 0) && (
+                                <p className="mt-2 pt-2 border-t border-brand-border/50 text-xs italic">
+                                    <span className="font-bold">Exemplo prático:</span> Investir <span className="font-bold text-brand-text-primary">{formatCurrency(stakeInCurrency)}</span> numa odd entre <span className="font-bold text-brand-text-primary">@{minOdd.toFixed(2)}</span> e <span className="font-bold text-brand-text-primary">@{maxOdd.toFixed(2)}</span> pode gerar um retorno de <span className="font-bold text-brand-win">{formatCurrency(minReturn)}</span> a <span className="font-bold text-brand-win">{formatCurrency(maxReturn)}</span>.
+                                </p>
+                            )}
+                        </InfoCard>
+                    )}
 
-                    <InfoCard icon={<PercentIcon className="w-5 h-5 text-brand-indigo" />} title="Stake Sugerido">
-                        <p className="font-bold text-brand-indigo text-lg">
-                            {suggestion.suggestedStake.bankrollPercentage}% da banca ({suggestion.suggestedStake.units.toFixed(2)}U)
-                        </p>
-                        <p className="font-semibold text-brand-text-primary text-md -mt-1">
-                            {formatCurrency(stakeInCurrency)}
-                        </p>
-                        <p className="mt-1">{suggestion.suggestedStake.reasoning}</p>
-                    </InfoCard>
+                    {suggestion.suggestedStake && (
+                        <InfoCard icon={<PercentIcon className="w-5 h-5 text-brand-indigo" />} title="Stake Sugerido">
+                            <p className="font-bold text-brand-indigo text-lg">
+                                {suggestion.suggestedStake.bankrollPercentage.toFixed(2)}% da banca ({suggestion.suggestedStake.units.toFixed(2)}U)
+                            </p>
+                            <p className="font-semibold text-brand-text-primary text-md -mt-1">
+                                {formatCurrency(stakeInCurrency)}
+                            </p>
+                            <p className="mt-1">{suggestion.suggestedStake.reasoning}</p>
+                        </InfoCard>
+                    )}
 
-                    <InfoCard icon={<TargetIcon className="w-5 h-5 text-brand-teal" />} title="Range de Odds Ideal">
-                         <p className="font-bold text-brand-teal text-lg">@{suggestion.optimalOddRange.min.toFixed(2)} - @{suggestion.optimalOddRange.max.toFixed(2)}</p>
-                        <p>{suggestion.optimalOddRange.reasoning}</p>
-                    </InfoCard>
+                    {suggestion.optimalOddRange && (
+                        <InfoCard icon={<TargetIcon className="w-5 h-5 text-brand-teal" />} title="Range de Odds Ideal">
+                             <p className="font-bold text-brand-teal text-lg">@{suggestion.optimalOddRange.min.toFixed(2)} - @{suggestion.optimalOddRange.max.toFixed(2)}</p>
+                            <p>{suggestion.optimalOddRange.reasoning}</p>
+                        </InfoCard>
+                    )}
                     
-                    <InfoCard icon={<BanknotesIcon className="w-5 h-5 text-brand-primary" />} title={suggestion.profitManagement.title}>
-                        <p>{suggestion.profitManagement.description}</p>
-                    </InfoCard>
+                    {suggestion.profitManagement && (
+                        <InfoCard icon={<BanknotesIcon className="w-5 h-5 text-brand-primary" />} title={suggestion.profitManagement.title}>
+                            <p>{suggestion.profitManagement.description}</p>
+                        </InfoCard>
+                    )}
                 </div>
             </div>
         );

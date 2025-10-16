@@ -10,10 +10,11 @@ import AIAssistant from './components/AIAssistant';
 import AILeverageAssistant from './components/AILeverageAssistant';
 import BetHistory from './components/BetHistory';
 import { Toaster, toast } from 'react-hot-toast';
-import UnitIndicator from './components/UnitIndicator';
+import { AILeverageSuggestion } from './types';
 
 const App: React.FC = () => {
     const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+    const [aiLeverageSuggestion, setAiLeverageSuggestion] = useState<AILeverageSuggestion | null>(null);
     
     const {
         state,
@@ -40,8 +41,7 @@ const App: React.FC = () => {
         if (years.size === 0) {
             return [new Date().getFullYear()];
         }
-        // FIX: Explicitly type the sort callback parameters to ensure they are treated as numbers.
-        return Array.from(years).sort((a: number, b: number) => b - a); // Descending order
+        return Array.from(years).sort((a: number, b: number) => b - a);
     }, [state.bets]);
 
     const handleDataAction = (action: () => Promise<string | void>) => {
@@ -76,7 +76,6 @@ const App: React.FC = () => {
                 <div className="space-y-4">
                     <h1 className="text-2xl font-bold text-brand-text-primary">Visão Geral da Banca</h1>
                     <StatsCards stats={stats} onSetInitialBankroll={setInitialBankroll} onAddWithdrawal={addWithdrawal} onSetBankrollGoal={setBankrollGoal} />
-                    <UnitIndicator currentBankroll={stats.currentBankroll} />
                 </div>
                 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
@@ -126,6 +125,7 @@ const App: React.FC = () => {
                         <AILeverageAssistant
                             bets={state.bets}
                             stats={stats}
+                            onSuggestionUpdate={setAiLeverageSuggestion}
                         />
                          <BetForm
                             currentBankroll={stats.currentBankroll}
@@ -134,6 +134,7 @@ const App: React.FC = () => {
                             existingTeams={stats.existingTeams}
                             deleteTeamSuggestion={deleteTeamSuggestion}
                             availableMarkets={availableMarkets}
+                            aiSuggestedStake={aiLeverageSuggestion?.suggestedStake}
                         />
                     </div>
                 </div>

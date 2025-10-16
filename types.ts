@@ -120,27 +120,27 @@ export interface AIWithdrawalSuggestion {
 }
 
 export interface AILeverageSuggestion {
-    profile: 'Conservador' | 'Moderado' | 'Agressivo' | 'Recuperação';
-    profileReasoning: string;
-    protectionAdvice: {
+    profile?: 'Conservador' | 'Moderado' | 'Agressivo' | 'Recuperação';
+    profileReasoning?: string;
+    protectionAdvice?: {
         title: string;
         description: string;
     };
-    leverageStrategy: {
+    leverageStrategy?: {
         title: string;
         description: string;
     };
-    suggestedStake: {
+    suggestedStake?: {
         bankrollPercentage: number;
         units: number;
         reasoning: string;
     };
-    optimalOddRange: {
+    optimalOddRange?: {
         min: number;
         max: number;
         reasoning: string;
     };
-    profitManagement: {
+    profitManagement?: {
         title: string;
         description: string;
     };

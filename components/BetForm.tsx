@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { toast } from 'react-hot-toast';
-import { Bet, BetSelection, Market, LolLeague } from '../types';
-import { LOL_LEAGUES, BET_TYPES, UNITS, UNIT_PERCENTAGE, HANDICAP_OPTIONS } from '../constants';
+import { Bet, BetSelection, Market, LolLeague, AILeverageSuggestion } from '../types';
+import { LOL_LEAGUES, BET_TYPES, UNIT_PERCENTAGE, HANDICAP_OPTIONS } from '../constants';
 import { parseBetsFromImage } from '../services/geminiService';
 import { UploadIcon, SparklesIcon, TrashIcon, XIcon } from './icons';
 
@@ -84,6 +84,7 @@ interface BetFormProps {
     existingTeams: Record<string, string[]>;
     deleteTeamSuggestion: (team: string) => void;
     availableMarkets: string[];
+    aiSuggestedStake?: AILeverageSuggestion['suggestedStake'] | null;
 }
 
 interface SelectionFormState {
@@ -112,7 +113,6 @@ interface SpecificSelectionState {
     custom?: string;
 }
 
-// FIX: Define a local type for accumulator selections that includes market and league, extending the base BetSelection.
 interface FormAccumulatorSelection extends BetSelection {
     market: string;
     league: LolLeague | string;
@@ -121,11 +121,10 @@ interface FormAccumulatorSelection extends BetSelection {
 const initialSelectionState: SelectionFormState = { market: Market.LOL, league: LolLeague.LPL, betType: BET_TYPES[Market.LOL][0], details: '', odd: '' };
 const initialSingleBetState: SingleBetState = { teamA: '', teamB: '', odd: '', betType: BET_TYPES[Market.LOL][0], market: Market.LOL, league: LolLeague.LPL };
 
-const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, addBetsFromImage, existingTeams, deleteTeamSuggestion, availableMarkets }) => {
+const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, addBetsFromImage, existingTeams, deleteTeamSuggestion, availableMarkets, aiSuggestedStake }) => {
     const [betStructure, setBetStructure] = useState<'Single' | 'Accumulator'>('Single');
     const [singleBetState, setSingleBetState] = useState<SingleBetState>(initialSingleBetState);
     const [specificSelection, setSpecificSelection] = useState<SpecificSelectionState>({});
-    // FIX: Update the state to use the new FormAccumulatorSelection type to correctly type selections with market and league.
     const [selections, setSelections] = useState<FormAccumulatorSelection[]>([]);
     const [currentSelection, setCurrentSelection] = useState<SelectionFormState>(initialSelectionState);
     const [units, setUnits] = useState('1');
@@ -134,12 +133,11 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, addBetsFromI
     const [isManualFormOpen, setIsManualFormOpen] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
     
-    useEffect(() => { handleUnitChange(units) }, [currentBankroll]);
+    useEffect(() => { handleUnitChange(units) }, [currentBankroll, units]);
     
     useEffect(() => { setSpecificSelection({}) }, [singleBetState.betType, singleBetState.market]);
 
     useEffect(() => {
-        // Reset specific states when switching between Single and Accumulator to prevent data leakage
         setSingleBetState(initialSingleBetState);
         setSpecificSelection({});
         setSelections([]);
@@ -147,11 +145,35 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, addBetsFromI
         handleUnitChange('1');
     }, [betStructure]);
 
+    const unitOptions = useMemo(() => {
+        const standardUnits = [
+            { label: '1U (1%)', value: '1' },
+            { label: '2U (2%)', value: '2' },
+            { label: '3U (3%)', value: '3' },
+        ];
+        if (aiSuggestedStake) {
+            return [
+                { label: `💡 IA Recomendado (${aiSuggestedStake.bankrollPercentage.toFixed(2)}%)`, value: aiSuggestedStake.bankrollPercentage.toString() },
+                ...standardUnits,
+            ];
+        }
+        return standardUnits;
+    }, [aiSuggestedStake]);
+    
+    useEffect(() => {
+        if (aiSuggestedStake) {
+            handleUnitChange(aiSuggestedStake.bankrollPercentage.toString());
+        } else {
+            handleUnitChange('1');
+        }
+    }, [aiSuggestedStake]);
 
-    const handleUnitChange = (newUnits: string) => {
-        setUnits(newUnits);
-        if (!isNaN(parseFloat(newUnits)) && newUnits !== 'manual') {
-            setValue((currentBankroll * UNIT_PERCENTAGE * parseFloat(newUnits)).toFixed(2));
+
+    const handleUnitChange = (newUnitsValue: string) => {
+        setUnits(newUnitsValue);
+        if (newUnitsValue !== 'manual' && !isNaN(parseFloat(newUnitsValue))) {
+            const percentage = parseFloat(newUnitsValue);
+            setValue((currentBankroll * (percentage / 100)).toFixed(2));
         } else {
             setValue('');
         }
@@ -208,15 +230,19 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, addBetsFromI
         let finalUnits: number;
         const parsedUnits = parseFloat(units);
 
-        if (isNaN(parsedUnits) || parsedUnits === 0) { // Covers 'manual' and '0'
-            if (currentBankroll > 0 && UNIT_PERCENTAGE > 0) {
-                finalUnits = betValue / (currentBankroll * UNIT_PERCENTAGE);
+        if (isNaN(parsedUnits) || units === 'manual') { 
+             if (currentBankroll > 0) {
+                finalUnits = (betValue / currentBankroll) * 100;
             } else {
                 finalUnits = 0;
             }
         } else {
-            finalUnits = parsedUnits;
+            finalUnits = parsedUnits; // This is now a direct percentage
         }
+        
+        // Convert percentage to 1U=1% units for storage
+        const unitsForStorage = finalUnits / (UNIT_PERCENTAGE * 100);
+
 
         if (betStructure === 'Single') {
             const { market, league, betType, teamA, teamB, odd: oddStr } = singleBetState;
@@ -226,13 +252,12 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, addBetsFromI
                 return;
             }
             const details = constructBetDetails();
-            addBet({ market, league, betStructure: 'Single', betType, details, units: finalUnits, value: betValue, odd: betOdd });
+            addBet({ market, league, betStructure: 'Single', betType, details, units: unitsForStorage, value: betValue, odd: betOdd });
             setSingleBetState(prev => ({ ...prev, teamA: '', teamB: '', odd: '' }));
             setSpecificSelection({});
         } else {
             if (selections.length < 2) { toast.error("Uma aposta múltipla precisa de pelo menos 2 seleções."); return; }
-            // FIX: Accessing `market` on a selection is now type-safe.
-            addBet({ market: selections[0]?.market || 'Múltipla', league: 'Múltipla', betStructure: 'Accumulator', betType: `Acumulada (${selections.length} seleções)`, details: selections.map(s => s.details).join(' / '), selections, units: finalUnits, value: betValue, odd: totalAccumulatorOdd });
+            addBet({ market: selections[0]?.market || 'Múltipla', league: 'Múltipla', betStructure: 'Accumulator', betType: `Acumulada (${selections.length} seleções)`, details: selections.map(s => s.details).join(' / '), selections, units: unitsForStorage, value: betValue, odd: totalAccumulatorOdd });
             setSelections([]);
         }
         toast.success('Aposta registrada com sucesso!');
@@ -417,7 +442,6 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, addBetsFromI
                             <li key={index} className="flex justify-between items-center bg-brand-bg p-2 rounded-md text-sm">
                                 <div>
                                     <p className="font-medium text-brand-text-primary">{sel.details}</p>
-                                    {/* FIX: Accessing `market` on a selection is now type-safe. */}
                                     <p className="text-brand-text-secondary">{sel.market} - {sel.betType}</p>
                                 </div>
                                 <div className="flex items-center gap-3">
@@ -467,15 +491,29 @@ const BetForm: React.FC<BetFormProps> = ({ currentBankroll, addBet, addBetsFromI
                             <legend className="text-sm font-medium text-brand-text-secondary px-2">Investimento</legend>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                                 <div>
-                                    <label htmlFor="units" className="block text-sm font-medium text-brand-text-secondary mb-1">Unidades</label>
-                                    <select id="units" value={units} onChange={(e) => handleUnitChange(e.target.value)} className="w-full bg-brand-bg border border-brand-border rounded-md p-2">
+                                    <label htmlFor="units" className="block text-sm font-medium text-brand-text-secondary mb-1">Unidades (% da Banca)</label>
+                                    <select 
+                                        id="units" 
+                                        value={units} 
+                                        onChange={(e) => handleUnitChange(e.target.value)} 
+                                        className="w-full bg-brand-bg border border-brand-border rounded-md p-2"
+                                    >
                                         <option value="manual">Manual</option>
-                                        {UNITS.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
+                                        {unitOptions.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
                                     </select>
                                 </div>
                                 <div>
                                     <label htmlFor="value" className="block text-sm font-medium text-brand-text-secondary mb-1">Valor (R$)</label>
-                                    <input id="value" type="number" step="0.01" value={value} onChange={e => { setValue(e.target.value); setUnits('manual'); }} className="w-full bg-brand-bg border border-brand-border rounded-md p-2" placeholder="25.00" />
+                                    <input 
+                                        id="value" 
+                                        type="number" 
+                                        step="0.01" 
+                                        value={value} 
+                                        onChange={e => { setValue(e.target.value); setUnits('manual'); }} 
+                                        className="w-full bg-brand-bg border border-brand-border rounded-md p-2" 
+                                        placeholder="25.00" 
+                                        readOnly={units !== 'manual'}
+                                    />
                                 </div>
                             </div>
                         </fieldset>

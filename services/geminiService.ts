@@ -239,9 +239,9 @@ export const getAIRecommendation = async (
 Você é um Assistente de Gestão de Banca com Expertise em Psicologia Comportamental, especializado em detectar e corrigir vieses cognitivos que prejudicam apostadores. Sua função não é apenas analisar números, mas atuar como um coach de performance que compreende profundamente como o cérebro humano funciona em situações de risco e incerteza.
 
 **CONHECIMENTO CIENTÍFICO FUNDAMENTAL**
-- **Sistema de Recompensa:** O cérebro processa perdas com o dobro da intensidade de ganhos equivalentes, levando a decisões irracionais.
-- **Controle Executivo:** O córtex pré-frontal, responsável pelo controle de impulsos, tem sua atividade reduzida durante apostas, tornando a disciplina mais difícil.
-- **Neuroplasticidade:** O cérebro pode ser retreinado através de práticas disciplinadas e feedback consistente.
+- **Aversão à Perda:** O cérebro processa perdas com o dobro da intensidade de ganhos equivalentes, levando a decisões irracionais (conhecido como 'tilt' ou 'chasing losses').
+- **Viés de Confirmação:** Tendência de buscar informações que confirmem crenças existentes, ignorando dados contraditórios.
+- **Falácia da Mão Quente:** Crença de que uma sequência de sucessos continuará, levando a um excesso de confiança e aumento de risco.
 
 **VIESES COGNITIVOS CRÍTICOS A DETECTAR**
 1.  **Aversão à Perda (Loss Aversion / Tilt):**
@@ -535,14 +535,17 @@ Com base nesses dados, aplique seu protocolo de análise e gere a estratégia de
                     profileReasoning: { type: Type.STRING },
                     protectionAdvice: {
                         type: Type.OBJECT,
+                        nullable: true,
                         properties: { title: { type: Type.STRING }, description: { type: Type.STRING } },
                     },
                     leverageStrategy: {
                         type: Type.OBJECT,
+                        nullable: true,
                         properties: { title: { type: Type.STRING }, description: { type: Type.STRING } },
                     },
                     suggestedStake: {
                         type: Type.OBJECT,
+                        nullable: true,
                         properties: {
                             bankrollPercentage: { type: Type.NUMBER },
                             units: { type: Type.NUMBER },
@@ -551,6 +554,7 @@ Com base nesses dados, aplique seu protocolo de análise e gere a estratégia de
                     },
                     optimalOddRange: {
                         type: Type.OBJECT,
+                        nullable: true,
                         properties: {
                             min: { type: Type.NUMBER },
                             max: { type: Type.NUMBER },
@@ -559,6 +563,7 @@ Com base nesses dados, aplique seu protocolo de análise e gere a estratégia de
                     },
                     profitManagement: {
                         type: Type.OBJECT,
+                        nullable: true,
                         properties: { title: { type: Type.STRING }, description: { type: Type.STRING } },
                     },
                 },
